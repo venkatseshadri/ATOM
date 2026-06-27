@@ -85,20 +85,45 @@ Risk Manager is a **hard, deterministic gate**. No advisory layer can loosen it.
 
 ---
 
-## 6. Phased Delivery
+## 6. Delivery Plan (dependency-sequenced — no dates)
 
-| Phase | Name              | Deliverable                                                                 |
-|-------|-------------------|-----------------------------------------------------------------------------|
-| **0** | Skeleton          | Every module is a stub: prints/logs, passes contract objects end-to-end. Wiring + contracts frozen. No real logic. Runnable. |
-| 1     | Regime + Signal   | Real regime classifier + strategy state machine producing decisions (dry).  |
-| 2     | Strike + Structure| Strike/wing selection; structure builder emits concrete leg orders (paper). |
-| 3     | Risk + Execution  | Hard risk gate live; broker-agnostic execution adapter; paper fills.        |
-| 4     | Ledger + Monitor  | Position truth store, P&L, decision/audit traces, EOD square-off.           |
-| 5     | Validation        | Backtest/paper expectancy proof. **No live money until expectancy proven.** |
-| 6+    | Live / Agentic    | Live broker wiring; optional agentic advisory overlay (read-only on risk).  |
+ATOM is delivered in phases ordered by **dependency**, not calendar. Each phase has an
+entry condition (what must be done first) and an exit criterion (how we know it's done).
+No date or time commitments — sequencing only.
 
-The module-build sequence within phases is driven by the contract dependency graph in
-the module document.
+| Phase | Name              | Depends on | Exit criterion                                                              |
+|-------|-------------------|-----------|------------------------------------------------------------------------------|
+| **0** | Skeleton          | —         | Every module a stub; contract objects flow end-to-end; wiring + contracts frozen; runnable. |
+| 1     | Regime + Signal   | 0         | 7-family regime engine + strategy FSM emit decisions on replayed data (dry). |
+| 2     | Strike + Structure| 1         | Structure builder emits concrete weekly legs (greek-driven, params open).    |
+| 3     | Risk + Execution  | 2         | Hard risk gate live; broker-agnostic order layer; paper fills.               |
+| 4     | Ledger + Monitor  | 3         | Position truth store, P&L, decision/audit trace, EOD square-off.             |
+| 5     | Research Loop     | 4         | Separate AI research loop produces cached insights/params (outside trade loop). |
+| 6     | Validation        | 4         | Backtest/paper expectancy proven. **No live money until proven.**            |
+| 7+    | Live              | 6         | Live broker wiring after validation passes.                                  |
+
+### 6.1 Dependency Graph
+
+```
+0 Skeleton
+   └─► 1 Regime+Signal
+          └─► 2 Strike+Structure
+                 └─► 3 Risk+Execution
+                        └─► 4 Ledger+Monitor
+                               ├─► 5 Research Loop   (parallel, non-blocking)
+                               └─► 6 Validation
+                                      └─► 7 Live
+```
+
+The module-build order *within* each phase follows the contract dependency chain in
+TECHNICAL_DESIGN.md §5.
+
+### 6.2 Build Approach — OUROBOROS
+
+ATOM is built by an **OUROBOROS-style multi-agent loop**: builder agents implement
+against the frozen contracts, a test/review agent validates, a gate controls promotion,
+then the loop advances. Humans own the gates; agents own the build. The build feedback
+loop (build → test → review → deploy) is specified in TECHNICAL_DESIGN.md.
 
 ---
 

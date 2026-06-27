@@ -152,9 +152,12 @@ The only things modules exchange. Functional field lists; pinned to schemas in P
     activation thresholds and trail step. Never overridable by any advisory/LLM layer.
 - **In:** `StructurePlan`, `PositionState`. **Out:** `RiskVerdict`.
 
-### 4.5 Agentic Overlay *(Phase 6+, optional)*
-- **Does:** Read-only advisory beside Strategy and Risk. May annotate decisions or
-  surface context to the operator. **Cannot override risk.** Deferred technical choice.
+### 4.5 Research Loop Consumer *(seam, Phase 5)*
+- **Does:** A read-only seam where the **separate AI research loop** (§8) drops cached
+  insights/params (e.g. tuned family weights, suggested greek bands). The deterministic
+  trading loop *optionally* reads them; everything still passes the risk gate.
+- **Rule:** AI never sits inside the trade decision/risk path — it only writes cache the
+  modules may read. See §8 for the two-loop architecture.
 
 ---
 
@@ -226,7 +229,7 @@ covered both ways.
 | RR-3  | FM-StopManagement       | Risk Engine → SL/TSL sub-engine              |
 | RR-4  | FM-RiskControl          | Risk Engine + Ledger                         |
 | RR-5  | FM-SessionLifecycle     | Orchestrator + Risk Engine + Order/Trade     |
-| RR-6  | FM-RiskControl          | Risk Engine (gate; Agentic Overlay read-only)|
+| RR-6  | FM-RiskControl          | Risk Engine (gate; research loop read-only)  |
 | PR-1  | FM-Connectivity         | Auth & Session                               |
 | PR-2  | FM-InstrumentResolution | Instrument & Symbol Master                   |
 | PR-3  | FM-MarketData           | Market Data                                  |
@@ -239,3 +242,125 @@ covered both ways.
 Coverage check: every FR/RR/PR maps to ≥1 technical module; every technical module
 serves ≥1 requirement. NFR-1..3 are design constraints honored across all modules
 (contracts in §2, skeleton in §5).
+
+---
+
+## 8. Two-Loop Architecture — Trading Loop vs. Research Loop
+
+A hard separation: **AI stays out of the trading loop.** ATOM runs two loops at
+different cadences.
+
+```
+   FAST — TRADING LOOP (deterministic, every cycle)
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ Market Data → Regime → Strategy FSM → Structure Builder → Risk →  │
+   │ Order/Trade → Ledger → Telemetry                                  │
+   │ No LLM in this path. Reads params + (optional) cached research.   │
+   └───────────────▲───────────────────────────────┬──────────────────┘
+                   │ reads cache                     │ writes trades/telemetry
+                   │ (params, weights)               ▼
+   ┌───────────────┴──────────────────────────────────────────────────┐
+   │ SLOW — RESEARCH LOOP (AI, infrequent: e.g. EOD / periodic)        │
+   │ inputs: trade history, regime stats, indicator efficacy, P&L      │
+   │ outputs: RESEARCH CACHE — suggested family weights, greek bands,  │
+   │          pattern findings. Advisory only; risk gate still applies.│
+   └──────────────────────────────────────────────────────────────────┘
+```
+
+Properties:
+- **Determinism in the hot path** — the trading loop is fully testable/replayable; no
+  LLM latency, non-determinism, or hallucination can touch a live order.
+- **Research is read-only and async** — it writes a cache the fast loop *may* read; it
+  never calls the broker and never relaxes risk.
+- **Cadence** — research runs far less often than the trading cycle (e.g. between
+  sessions). Mirrors the house position-research-cache pattern.
+
+`ResearchCache` is a contract object: { family weight suggestions, greek-band
+suggestions, pattern notes, generated-at, validity window }.
+
+---
+
+## 9. AI-Utilization Research (per area)
+
+Where AI/LLM adds value — and where it must not. Filled in detail during grilling.
+
+| Area                         | AI used? | How / why                                                        |
+|------------------------------|----------|------------------------------------------------------------------|
+| Trading loop (regime→order)  | **No**   | Deterministic; AI excluded from hot path (§8).                   |
+| Research loop                | Yes      | Tune family weights, surface greek-band candidates, find patterns in trade history. Output cached, advisory. |
+| Strategy ideation / grilling | Yes      | Pre-build: pressure-test rules, propose threshold candidates (human-gated). |
+| Build (OUROBOROS)            | Yes      | Builder/test/review agents implement against contracts (§10).    |
+| Post-trade explainability    | Yes      | Summarise decision traces for the operator; never alters trades. |
+
+Open research questions: model choice and cost per loop; how research suggestions are
+validated before the fast loop is allowed to consume them; guardrails so a bad
+suggestion cannot degrade live trading.
+
+---
+
+## 10. Build Feedback Loop — OUROBOROS
+
+ATOM is built by a multi-agent loop, not hand-coded in one pass.
+
+```
+   ┌─► BUILD ───► TEST ───► REVIEW ───► GATE ───► (promote) ─┐
+   │   builder    run       validator   human            │
+   │   agent      suite      agent       approval         │
+   └──────────────◄──── iterate on failure ───────────────┘
+```
+
+- **Build** — agent implements one module/ticket against the frozen contracts (§2).
+- **Test** — full suite runs (unit + integration + sim harness, §11). Red → back to build.
+- **Review** — validator agent checks correctness, contract conformance, no fake P&L /
+  hallucinated data; raises findings (does not silently fix).
+- **Gate** — human approves promotion; agents own build, humans own gates.
+- **Loop** — on pass, advance to the next ticket in the dependency order (§5, and
+  PROJECT_DOCUMENT.md §6 phase graph).
+
+This is the *build-time* feedback loop; the *runtime* learning loop is the research loop
+(§8). They are distinct.
+
+---
+
+## 11. Test Strategy
+
+Every module ships with tests; nothing promotes on green-count alone.
+
+- **Unit** — per module, against its input/output contract; pure logic (regime votes,
+  greek-band math, FSM transitions, SL/TSL triggers).
+- **Integration** — pipeline slices (e.g. Regime→FSM→Builder→Risk) on canned snapshots.
+- **Sim / Replay Harness** — deterministic end-to-end runs over recorded or synthetic
+  market data (mock-websocket style), driving the full lifecycle incl. fault injection
+  (e.g. missing greeks, bad tick, reversal mid-fly). Mirrors the house PORCUPINE harness.
+- **Contract conformance** — assert every module honours §2 shapes; catch silent
+  drops/format bugs.
+- **Risk invariants** — property tests: no path exceeds deploy/DD, none skips EOD
+  square-off, research/AI can never relax the gate.
+
+Each requirement (RTM §7) must have ≥1 test tracing to it before its module promotes.
+
+---
+
+## 12. Implementation Flow (one trading cycle)
+
+```mermaid
+flowchart TD
+    A[Orchestrator: cycle tick] --> B{Session valid?}
+    B -- no --> B1[Auth & Session: re-login] --> C
+    B -- yes --> C[Market Data: MarketSnapshot incl. greeks/IV]
+    C --> D[Regime Engine: 7-family consensus -> RegimeState]
+    D --> E[Strategy FSM: state + regime -> StrategyDecision]
+    E --> F{intent?}
+    F -- HOLD --> Z[Telemetry trace] --> A
+    F -- OPEN/MORPH/EXIT --> G[Structure Builder: greek-driven StructurePlan]
+    G --> H[Risk Engine + SL/TSL: gate]
+    H -- rejected --> Z
+    H -- approved --> I[Order/Trade: place legs -> Fills]
+    I --> J[Ledger: update PositionState + P&L]
+    J --> Z
+    subgraph slow[Research Loop - async, infrequent]
+      R[AI: analyse history] --> RC[(Research Cache)]
+    end
+    RC -. optional read .-> D
+    RC -. optional read .-> G
+```
