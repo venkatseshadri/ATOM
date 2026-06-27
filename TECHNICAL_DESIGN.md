@@ -1,6 +1,7 @@
-# ATOM — Module Design (Technical Modules)
+# ATOM — Technical Design (Buildable Modules)
 
-**Companion to PROJECT_DOCUMENT.md** · Draft v0.2
+**Companion to PROJECT_DOCUMENT.md (charter) and FUNCTIONAL_DESIGN.md (behaviour).**
+Draft v0.4 · The *how*: buildable units, contracts, skeleton, traceability.
 
 This document defines ATOM's **technical modules** — the buildable units a coding
 agent owns and ships. Each module is independently buildable, testable, and talks to
@@ -10,7 +11,7 @@ Two layers, one catalog:
 - **Platform modules** — cross-cutting infrastructure (Auth, Instrument, Market Data,
   Order/Trade, Ledger, Config, Telemetry, Orchestrator). Reusable, domain-light.
 - **Strategy modules** — the trading brain (Regime, Strategy FSM, Structure Builder,
-  Risk). The functional design in PROJECT_DOCUMENT.md §4 *lives inside these*.
+  Risk). The strategy lifecycle in FUNCTIONAL_DESIGN.md §1 *lives inside these*.
 
 Still implementation-agnostic: no language, framework, or broker named here.
 
@@ -205,36 +206,12 @@ and the contracts are frozen.
 
 ---
 
-## 7. Functional Modules & Requirements Traceability
+## 7. Requirements Traceability Matrix (RTM)
 
-Two lenses on the same system:
-- **Functional module** — a domain capability, grouped by *what the system does* and
-  *why*. Maps to requirements (PROJECT_DOCUMENT.md §9).
-- **Technical module** — the buildable unit that *implements* the capability (§3–§4).
-
-Both are first-class. The **Requirements Traceability Matrix (RTM)** links every
-requirement → functional module → technical module(s), so every line of code and test
-traces to a need, and every requirement is provably covered.
-
-### 7.1 Functional Modules (domain capabilities)
-
-| Functional module        | Purpose (what/why)                                       | Requirements        |
-|--------------------------|----------------------------------------------------------|---------------------|
-| FM-Regime                | Read the market, name the regime                         | FR-1                |
-| FM-Lifecycle             | The adaptive theta state machine (entry→morph→runner→exit)| FR-2, FR-3, FR-4, FR-6 |
-| FM-StructureSelection    | Choose weekly strikes/wings for each structure           | FR-5                |
-| FM-RiskControl           | Sizing, deploy cap, DD floor, daily-loss, re-entry, gate | RR-1, RR-2, RR-4, RR-6 |
-| FM-StopManagement        | SL / TSL / TP setting and trailing                       | RR-3                |
-| FM-SessionLifecycle      | Entry windows, cadence, EOD square-off                   | RR-5, PR-8          |
-| FM-Connectivity          | Broker auth + session                                    | PR-1                |
-| FM-InstrumentResolution  | Strike ladder, lots, tradingsymbol format                | PR-2                |
-| FM-MarketData            | Spot, chain, IV, multi-TF OHLC acquisition               | PR-3                |
-| FM-Execution             | Place/modify/cancel orders, capture fills                | PR-4                |
-| FM-Bookkeeping           | Position + P&L truth store                               | PR-5                |
-| FM-Audit                 | Decision/transition trace, explainability                | PR-6                |
-| FM-Configuration         | Central params                                           | PR-7                |
-
-### 7.2 Requirements Traceability Matrix
+Bridges all three docs: every **requirement** (PROJECT_DOCUMENT.md §9) →
+**functional module** (FUNCTIONAL_DESIGN.md §3) → **technical module(s)** (§3–§4 here).
+So every line of code and test traces to a need, and every requirement is provably
+covered both ways.
 
 | Req   | Functional module       | Technical module(s)                          |
 |-------|-------------------------|----------------------------------------------|

@@ -53,75 +53,17 @@ deferred to later phases and captured in the module document and per-phase specs
 
 ## 4. Strategy — The Adaptive Theta Lifecycle
 
-ATOM is a **state machine** over the live structure. It enters with-trend to collect
-directional theta, morphs into a range structure when trend stalls, and sheds the
-threatened leg when trend reverses — keeping the now-aligned spread as a trailing
-runner.
-
-### 4.1 States & Transitions
+ATOM is a **state machine** over the live structure: enter with-trend to collect
+directional theta, morph into a range structure (iron fly) when trend stalls, shed the
+threatened leg on reversal and keep the aligned spread as a trailing runner.
 
 ```
-            ┌──────────────────────────────────────────────────────┐
-            │                       FLAT                            │
-            │                  (no position)                        │
-            └───────────────┬──────────────────────────────────────┘
-                            │  Regime = TREND (up/down)
-                            ▼
-            ┌──────────────────────────────────────────────────────┐
-            │                  SINGLE_SPREAD                        │
-            │  Uptrend   → Bull Put Spread   (sell PE / buy PE)     │
-            │  Downtrend → Bear Call Spread  (sell CE / buy CE)     │
-            │  → with-trend credit, theta + mild directional        │
-            └──────┬─────────────────────────────┬──────────────────┘
-                   │ Regime → SIDEWAYS            │ SL/TSL/TP/EOD
-                   ▼                              ▼
-            ┌──────────────────────────┐      ┌───────────┐
-            │        IRON_FLY          │      │   FLAT    │
-            │  add opposing credit     │      └───────────┘
-            │  spread → range theta    │
-            │  both sides              │
-            └──────┬───────────────────┘
-                   │ Regime → TREND reverses (opposite side)
-                   ▼
-            ┌──────────────────────────────────────────────────────┐
-            │                     RUNNER                            │
-            │  Close the original (now-threatened) spread.          │
-            │  Keep the spread aligned with new trend.              │
-            │  Manage with SL / trailing-SL until exit.             │
-            └───────────────┬──────────────────────────────────────┘
-                            │ SL/TSL/TP/EOD
-                            ▼
-                          FLAT
+FLAT → SINGLE_SPREAD → IRON_FLY → RUNNER → FLAT
 ```
 
-### 4.2 Transition Rules (functional)
-
-| From          | Trigger                          | Action                                                                 | To            |
-|---------------|----------------------------------|------------------------------------------------------------------------|---------------|
-| FLAT          | Trend confirmed (up/down)        | Open with-trend credit spread (Bull Put if up, Bear Call if down)      | SINGLE_SPREAD |
-| SINGLE_SPREAD | Regime turns sideways            | Add opposing credit spread → structure becomes iron fly/condor         | IRON_FLY      |
-| SINGLE_SPREAD | SL / TSL / TP / EOD              | Close spread                                                           | FLAT          |
-| IRON_FLY      | Trend resumes in opposite dir    | Close the threatened (original) spread; retain aligned spread          | RUNNER        |
-| IRON_FLY      | SL / TSL / TP / EOD              | Close both spreads                                                     | FLAT          |
-| RUNNER        | SL / TSL / TP / EOD              | Close remaining spread                                                 | FLAT          |
-
-Notes:
-- "With-trend credit spread" = the spread whose max-profit zone is *in the direction
-  of, or above/below the current trend* so that trend + theta both pay (Bull Put for
-  up, Bear Call for down).
-- The **opposing spread** added at the sideways transition is the mirror leg that
-  completes the iron fly, so the structure earns premium from both sides while the
-  market ranges.
-- On reversal, the leg that is now in the path of price is the **threatened** leg and
-  is closed; the surviving leg is already aligned with the new trend and becomes the
-  runner.
-
-### 4.3 Open Questions for the strategy (to resolve in review)
-- Exact regime-classification inputs (which indicators / timeframes confirm
-  trend vs. sideways vs. reversal). Placeholder: multi-TF trend + range filter.
-- Strike/wing selection rule for weekly spreads (delta-based vs. fixed-distance vs.
-  premium-target). Placeholder: delta-band selection.
-- Whether the runner re-arms a new structure after exit, or stays flat to next signal.
+The full state diagram, transition table, **sequence diagram**, and open strategy
+questions live in **FUNCTIONAL_DESIGN.md**. The buildable modules, contracts, and
+requirements traceability live in **TECHNICAL_DESIGN.md**.
 
 ---
 
@@ -184,7 +126,8 @@ the module document.
 ## 9. Requirements Catalog (traceability IDs)
 
 Stable IDs for every requirement, so design, code, and tests can trace back to a need.
-Functional modules and technical modules map onto these in MODULE_DESIGN.md §7.
+Functional modules map onto these in FUNCTIONAL_DESIGN.md; the requirements
+traceability matrix (requirement → functional → technical) is in TECHNICAL_DESIGN.md.
 
 ### Strategy (FR)
 | ID    | Requirement                                                                 |
