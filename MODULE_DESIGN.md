@@ -1,164 +1,204 @@
-# ATOM — Module Design
+# ATOM — Module Design (Technical Modules)
 
-**Companion to PROJECT_DOCUMENT.md** · Draft v0.1
+**Companion to PROJECT_DOCUMENT.md** · Draft v0.2
 
-This document lists ATOM's key modules, what each one does, the contract objects it
-consumes and produces, and the dependency order for the Phase 0 skeleton. It stays
-functional — no language, framework, or storage decisions here.
+This document defines ATOM's **technical modules** — the buildable units a coding
+agent owns and ships. Each module is independently buildable, testable, and talks to
+the rest of the system only through frozen **contract objects** (§2).
+
+Two layers, one catalog:
+- **Platform modules** — cross-cutting infrastructure (Auth, Instrument, Market Data,
+  Order/Trade, Ledger, Config, Telemetry, Orchestrator). Reusable, domain-light.
+- **Strategy modules** — the trading brain (Regime, Strategy FSM, Structure Builder,
+  Risk). The functional design in PROJECT_DOCUMENT.md §4 *lives inside these*.
+
+Still implementation-agnostic: no language, framework, or broker named here.
 
 ---
 
 ## 1. Pipeline Overview
 
-One pass through the system, per cycle, per index:
+One cycle, per index. Platform modules underneath; strategy modules in the flow.
 
 ```
-  Market Data ──► Regime Classifier ──► Strategy Engine ──► Structure Builder
-                                                                   │
-                                                                   ▼
-        Ledger ◄── Execution Adapter ◄── Risk Manager ◄───────────┘
-            ▲                                                       │
-            └────────────── Monitoring / Audit ◄────────────────────┘
+                         ┌─────────── Config ───────────┐  (params to all)
+                         │                              │
+   Auth & Session ──► Market Data ──► Regime ──► Strategy FSM ──► Structure Builder
+        │                                                              │
+        │                            Instrument & Symbol Master  ◄─────┤ (strikes,
+        │                                  (used by Builder + Order)    │  lots, fmt)
+        ▼                                                              ▼
+   broker conn ◄── Order / Trade ◄── Risk Engine ◄──────────────────────┘
+                        │                 │ (SL/TSL/TP/DD gate)
+                        ▼                 │
+                     Ledger ◄─────────────┘
+                        │
+                        └──────► Telemetry / Audit ◄── (events from every module)
 
-  Orchestrator drives the cycle. Config feeds every module. Agentic Overlay
-  (later, optional) sits read-only beside Strategy and Risk.
+   Orchestrator / Scheduler drives the cycle, entry windows, EOD square-off.
 ```
 
-Data flows left→right; the Risk Manager is the last gate before any order leaves the
-system. Every module also emits trace events to Monitoring.
+Strategy modules produce a plan; **Risk Engine is the last gate** before Order/Trade
+sends anything. Every module emits trace events to Telemetry.
 
 ---
 
 ## 2. Contract Objects (frozen in Phase 0)
 
-These are the only things modules exchange. Field lists are functional, not final
-schemas — they get pinned during Phase 0.
+The only things modules exchange. Functional field lists; pinned to schemas in Phase 0.
 
-| Object            | Produced by         | Key fields (functional)                                                            |
-|-------------------|---------------------|------------------------------------------------------------------------------------|
-| `MarketSnapshot`  | Market Data         | index, timestamp, spot, option chain (strikes, CE/PE LTP, IV), multi-TF OHLC       |
-| `RegimeState`     | Regime Classifier   | index, timestamp, regime ∈ {TREND_UP, TREND_DOWN, SIDEWAYS, REVERSAL}, confidence  |
-| `StrategyDecision`| Strategy Engine     | intent ∈ {OPEN, MORPH_ADD, MORPH_CLOSE_LEG, HOLD, EXIT}, target structure, rationale|
-| `StructurePlan`   | Structure Builder   | list of legs (right CE/PE, strike, action BUY/SELL, qty), net credit, max loss     |
-| `RiskVerdict`     | Risk Manager        | approved bool, adjusted qty, breached rules, SL/TSL/TP levels                       |
-| `OrderRequest`    | Execution Adapter   | per-leg broker-agnostic order (symbol, side, qty, type)                             |
-| `Fill`            | Execution Adapter   | order id, leg, fill price, qty, status, timestamp                                  |
-| `PositionState`   | Ledger              | current FSM state, open legs, entry prices, live P&L, realized P&L                  |
-| `TraceEvent`      | every module        | source, type, payload, timestamp                                                   |
+| Object            | Produced by        | Key fields (functional)                                                            |
+|-------------------|--------------------|------------------------------------------------------------------------------------|
+| `Session`         | Auth & Session     | broker token, login state, expiry, reconnect status                                |
+| `Instrument`      | Instrument Master  | tradingsymbol, index, expiry, strike, right CE/PE, lot size, tick size             |
+| `MarketSnapshot`  | Market Data        | index, timestamp, spot, option chain (strikes, CE/PE LTP, IV), multi-TF OHLC       |
+| `RegimeState`     | Regime Engine      | index, regime ∈ {TREND_UP, TREND_DOWN, SIDEWAYS, REVERSAL}, confidence             |
+| `StrategyDecision`| Strategy FSM       | intent ∈ {OPEN, MORPH_ADD, MORPH_CLOSE_LEG, HOLD, EXIT}, target structure, rationale|
+| `StructurePlan`   | Structure Builder  | legs (`Instrument` + action BUY/SELL + qty), net credit, max loss                  |
+| `RiskVerdict`     | Risk Engine        | approved bool, adjusted qty, breached rules, SL/TSL/TP levels                       |
+| `OrderRequest`    | Order/Trade        | per-leg broker-agnostic order (`Instrument`, side, qty, type)                       |
+| `Fill`            | Order/Trade        | order id, leg, fill price, qty, status, timestamp                                  |
+| `PositionState`   | Ledger             | FSM state, open legs, entry prices, live P&L, realized P&L                          |
+| `TraceEvent`      | every module       | source, type, payload, timestamp                                                   |
 
 ---
 
-## 3. Modules
+## 3. Platform Modules
 
-### 3.1 Market Data Provider
-- **Does:** Supplies a `MarketSnapshot` each cycle — index spot, weekly option chain
-  (strikes, CE/PE prices, IV), and multi-timeframe OHLC for regime detection.
-- **In:** index, cycle tick. **Out:** `MarketSnapshot`.
-- **Agnostic note:** later may be live capture, a replay file, or existing infra. The
-  rest of the system never knows the source.
+### 3.1 Config
+- **Does:** Single source for all params — strategy thresholds, strike rules, risk
+  limits (deploy ₹2L, 10% DD floor, SL/TSL, re-entries), entry windows, broker creds
+  reference. Feeds every module. No logic.
 
-### 3.2 Regime Classifier
-- **Does:** Reads `MarketSnapshot`, decides current regime — TREND_UP / TREND_DOWN /
-  SIDEWAYS / REVERSAL — with a confidence. This is the trigger source for the strategy
-  state machine (§4 of Project Document).
-- **In:** `MarketSnapshot`. **Out:** `RegimeState`.
-- **Open:** indicator set + timeframes that define trend vs. sideways vs. reversal.
+### 3.2 Telemetry / Audit
+- **Does:** Collects `TraceEvent`s from every module into a decision/audit trail.
+  Console + structured event log. Lets the system explain every transition and order.
+- **In:** `TraceEvent`. **Out:** logs/traces.
 
-### 3.3 Strategy Engine (Adaptive Theta State Machine)
-- **Does:** Holds the live FSM (FLAT → SINGLE_SPREAD → IRON_FLY → RUNNER → FLAT).
-  Combines `RegimeState` + current `PositionState` and emits a `StrategyDecision`
-  (open with-trend spread, add opposing spread to morph into iron fly, close the
-  threatened leg into a runner, hold, or exit).
-- **In:** `RegimeState`, `PositionState`. **Out:** `StrategyDecision`.
-- **Core of ATOM.** All lifecycle logic from Project Document §4 lives here.
+### 3.3 Auth & Session
+- **Does:** Broker login and **session lifecycle** — obtain token, keep-alive,
+  detect expiry, reconnect. Gates the whole system: no `Session`, no trading. Hides
+  broker-specific auth behind one interface.
+- **In:** creds (from Config). **Out:** `Session`.
+- **Why a module:** every live call (Market Data, Order/Trade) needs a valid session;
+  centralising it avoids scattered re-login logic.
 
-### 3.4 Structure Builder / Strike Selector
-- **Does:** Turns an abstract `StrategyDecision` into a concrete `StructurePlan` —
-  picks strikes and wings for the weekly expiry, builds the leg list, computes net
-  credit and max loss.
-- **In:** `StrategyDecision`, `MarketSnapshot`. **Out:** `StructurePlan`.
-- **Open:** strike selection rule (delta-band vs. fixed-distance vs. premium-target).
+### 3.4 Instrument & Symbol Master
+- **Does:** Authoritative contract metadata. Resolves the weekly expiry, builds the
+  strike ladder, returns lot size and tick size, and **formats the broker
+  tradingsymbol** (note: NIFTY vs SENSEX use different symbol formats — e.g.
+  `SENSEX50[YY][MMM][DD][STRIKE][CE/PE]`). Resolves ATM/OTM strikes by offset or delta.
+- **In:** index, spot, expiry rule. **Out:** `Instrument` objects.
+- **Why a module:** symbol-format and lot/strike bugs are a known failure class; one
+  module owns it so Structure Builder and Order/Trade never hand-format symbols.
 
-### 3.5 Risk Manager
-- **Does:** Hard, deterministic gate. Checks `StructurePlan` against deploy size
-  (₹2L), 10% DD floor, daily-loss cap, sizing, re-entry count; sets SL/TSL/TP levels;
-  approves, resizes, or rejects. Also monitors open positions every cycle for SL/TSL/
-  TP/EOD breaches and forces EXIT decisions.
-- **In:** `StructurePlan`, `PositionState`. **Out:** `RiskVerdict`.
-- **Rule:** never overridable by any advisory/LLM layer.
+### 3.5 Market Data
+- **Does:** Supplies a `MarketSnapshot` per cycle — spot, weekly option chain (CE/PE
+  prices, IV), multi-TF OHLC for regime detection. Source-agnostic (live, replay, or
+  existing infra) behind one interface.
+- **In:** index, `Session`, tick. **Out:** `MarketSnapshot`.
 
-### 3.6 Execution Adapter
-- **Does:** Broker-agnostic order interface. Converts approved `StructurePlan` legs
-  into `OrderRequest`s, sends them, returns `Fill`s. Idempotent; handles partial fills.
-- **In:** `StructurePlan` + `RiskVerdict`. **Out:** `Fill[]`.
-- **Agnostic note:** real broker, paper simulator, or existing order layer behind one
-  interface.
+### 3.6 Order / Trade
+- **Does:** Broker-agnostic order interface — place / modify / cancel, return `Fill`s.
+  Idempotent; handles partial fills and rejects. Converts `StructurePlan` legs (already
+  approved by Risk) into `OrderRequest`s and executes.
+- **In:** `StructurePlan` + `RiskVerdict` + `Session`. **Out:** `Fill[]`.
 
-### 3.7 Ledger / State Store
+### 3.7 Ledger / Persistence
 - **Does:** Single source of truth for position state and P&L. Applies `Fill`s,
-  maintains the FSM `PositionState`, computes live and realized P&L. Everything that
-  needs "what do we hold right now" reads here.
+  maintains FSM `PositionState`, computes live and realized P&L. "What do we hold now"
+  reads here.
 - **In:** `Fill[]`. **Out:** `PositionState`.
 
-### 3.8 Orchestrator / Session Manager
-- **Does:** Drives the cycle loop per index; owns session lifecycle — entry windows,
-  cycle cadence, and mandatory EOD square-off. Sequences the modules in pipeline order.
-- **In:** clock, config. **Out:** cycle invocations.
-
-### 3.9 Monitoring / Audit
-- **Does:** Collects `TraceEvent`s from every module into a decision/audit trail. Lets
-  the system explain every state transition and order. Console + structured event log.
-- **In:** `TraceEvent`. **Out:** logs / traces.
-
-### 3.10 Config
-- **Does:** Single place for strategy params (regime thresholds, strike rules) and risk
-  params (deploy size, DD floor, SL/TSL, re-entries, entry windows). Feeds every module.
-
-### 3.11 Agentic Overlay *(later, optional — Phase 6+)*
-- **Does:** Read-only advisory layer beside Strategy and Risk. May annotate decisions
-  or surface context to the operator. **Cannot override risk.** Purely a technical
-  implementation choice deferred out of the functional core.
+### 3.8 Orchestrator / Scheduler
+- **Does:** Drives the per-index cycle loop. Owns session lifecycle calls, entry
+  windows, cycle cadence, and **mandatory EOD square-off**. Sequences modules in
+  pipeline order.
+- **In:** clock, Config. **Out:** cycle invocations.
 
 ---
 
-## 4. Phase 0 Skeleton — Build Order
+## 4. Strategy Modules
 
-Phase 0 = every module above as a **stub**: it accepts its input contract, emits a
-print/log line, and returns a hard-coded/passthrough output contract. Goal: prove the
-full pipeline runs end-to-end and freeze the seams.
+> The functional lifecycle in PROJECT_DOCUMENT.md §4 is implemented here.
+
+### 4.1 Regime Engine
+- **Does:** Reads `MarketSnapshot`, classifies regime — TREND_UP / TREND_DOWN /
+  SIDEWAYS / REVERSAL — with confidence. Trigger source for the Strategy FSM.
+- **In:** `MarketSnapshot`. **Out:** `RegimeState`.
+- **Open:** indicator set + timeframes that define each regime.
+
+### 4.2 Strategy FSM (Adaptive Theta Engine) — *core of ATOM*
+- **Does:** Holds the live state machine (FLAT → SINGLE_SPREAD → IRON_FLY → RUNNER →
+  FLAT). Combines `RegimeState` + `PositionState`, emits a `StrategyDecision` (open
+  with-trend spread, add opposing spread to morph into iron fly, close the threatened
+  leg into a runner, hold, or exit).
+- **In:** `RegimeState`, `PositionState`. **Out:** `StrategyDecision`.
+
+### 4.3 Structure Builder / Strike Selector
+- **Does:** Turns an abstract `StrategyDecision` into a concrete `StructurePlan` —
+  asks Instrument Master for strikes/wings on the weekly expiry, builds the leg list,
+  computes net credit and max loss.
+- **In:** `StrategyDecision`, `MarketSnapshot`, Instrument Master. **Out:** `StructurePlan`.
+- **Open:** strike rule (delta-band vs. fixed-distance vs. premium-target).
+
+### 4.4 Risk Engine — *hard, deterministic gate*
+- **Does:** Last gate before any order. Checks `StructurePlan` against deploy size
+  (₹2L), 10% DD floor, daily-loss cap, sizing, re-entry count; approves / resizes /
+  rejects. Contains the **SL/TSL/TP sub-engine** that, every cycle, monitors open
+  positions and forces EXIT decisions on breach.
+  - **SL/TSL sub-engine:** sets and trails stops per structure (incl. RUNNER); owns
+    activation thresholds and trail step. Never overridable by any advisory/LLM layer.
+- **In:** `StructurePlan`, `PositionState`. **Out:** `RiskVerdict`.
+
+### 4.5 Agentic Overlay *(Phase 6+, optional)*
+- **Does:** Read-only advisory beside Strategy and Risk. May annotate decisions or
+  surface context to the operator. **Cannot override risk.** Deferred technical choice.
+
+---
+
+## 5. Phase 0 Skeleton — Build Order
+
+Phase 0 = every module a **stub**: accepts its input contract, emits a print/trace,
+returns a canned/passthrough output contract. Goal: full pipeline runs end-to-end,
+seams frozen.
 
 Build order follows the dependency chain:
 
 1. **Config** — params object every module reads.
-2. **Contract objects** (§2) — define all dataclasses/interfaces first.
-3. **Monitoring/Audit** — so every later stub can emit traces.
-4. **Market Data** stub — emits a canned `MarketSnapshot`.
-5. **Regime Classifier** stub — returns a fixed `RegimeState`.
-6. **Strategy Engine** stub — returns a fixed `StrategyDecision`, FSM scaffold present.
-7. **Structure Builder** stub — returns a canned `StructurePlan`.
-8. **Risk Manager** stub — approves with canned `RiskVerdict`.
-9. **Execution Adapter** stub — returns canned `Fill`s.
-10. **Ledger** stub — accumulates `Fill`s into a `PositionState`.
-11. **Orchestrator** — wires 1–10 into one logged cycle loop.
+2. **Contract objects** (§2) — define all interfaces first.
+3. **Telemetry** — so every later stub can emit traces.
+4. **Auth & Session** stub — returns a canned `Session`.
+5. **Instrument & Symbol Master** stub — returns canned `Instrument`s (real symbol fmt).
+6. **Market Data** stub — emits a canned `MarketSnapshot`.
+7. **Regime Engine** stub — returns a fixed `RegimeState`.
+8. **Strategy FSM** stub — returns a fixed `StrategyDecision`; FSM scaffold present.
+9. **Structure Builder** stub — returns a canned `StructurePlan`.
+10. **Risk Engine** stub — approves with canned `RiskVerdict` (SL/TSL sub-engine stubbed).
+11. **Order/Trade** stub — returns canned `Fill`s.
+12. **Ledger** stub — accumulates `Fill`s into a `PositionState`.
+13. **Orchestrator** — wires 1–12 into one logged cycle loop.
 
-**Exit criterion for Phase 0:** running the orchestrator prints one full pass:
-`MarketSnapshot → RegimeState → StrategyDecision → StructurePlan → RiskVerdict →
-Fill → PositionState`, with a trace line from each module, and the contracts are
-frozen.
+**Exit criterion:** orchestrator prints one full pass —
+`Session → Instrument → MarketSnapshot → RegimeState → StrategyDecision →
+StructurePlan → RiskVerdict → Fill → PositionState` — with a trace from each module,
+and the contracts are frozen.
 
 ---
 
-## 5. Module → Contract Matrix
+## 6. Module → Contract Matrix
 
-| Module             | Consumes                          | Produces           |
-|--------------------|-----------------------------------|--------------------|
-| Market Data        | tick                              | `MarketSnapshot`   |
-| Regime Classifier  | `MarketSnapshot`                  | `RegimeState`      |
-| Strategy Engine    | `RegimeState`, `PositionState`    | `StrategyDecision` |
-| Structure Builder  | `StrategyDecision`,`MarketSnapshot`| `StructurePlan`   |
-| Risk Manager       | `StructurePlan`, `PositionState`  | `RiskVerdict`      |
-| Execution Adapter  | `StructurePlan`, `RiskVerdict`    | `Fill[]`           |
-| Ledger             | `Fill[]`                          | `PositionState`    |
-| Orchestrator       | clock, config                     | cycle invocations  |
-| Monitoring         | `TraceEvent` (all)                | logs               |
-| Config             | —                                 | params             |
+| Module                     | Layer    | Consumes                              | Produces           |
+|----------------------------|----------|---------------------------------------|--------------------|
+| Config                     | Platform | —                                     | params             |
+| Telemetry / Audit          | Platform | `TraceEvent` (all)                    | logs               |
+| Auth & Session             | Platform | creds                                 | `Session`          |
+| Instrument & Symbol Master | Platform | index, spot, expiry rule              | `Instrument`       |
+| Market Data                | Platform | index, `Session`                      | `MarketSnapshot`   |
+| Order / Trade              | Platform | `StructurePlan`,`RiskVerdict`,`Session`| `Fill[]`          |
+| Ledger / Persistence       | Platform | `Fill[]`                              | `PositionState`    |
+| Orchestrator / Scheduler   | Platform | clock, Config                         | cycle invocations  |
+| Regime Engine              | Strategy | `MarketSnapshot`                      | `RegimeState`      |
+| Strategy FSM               | Strategy | `RegimeState`, `PositionState`        | `StrategyDecision` |
+| Structure Builder          | Strategy | `StrategyDecision`,`MarketSnapshot`,Instrument | `StructurePlan` |
+| Risk Engine (+SL/TSL)      | Strategy | `StructurePlan`, `PositionState`      | `RiskVerdict`      |
