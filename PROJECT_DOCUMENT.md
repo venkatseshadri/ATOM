@@ -181,7 +181,53 @@ the module document.
 
 ---
 
-## 9. Glossary
+## 9. Requirements Catalog (traceability IDs)
+
+Stable IDs for every requirement, so design, code, and tests can trace back to a need.
+Functional modules and technical modules map onto these in MODULE_DESIGN.md §7.
+
+### Strategy (FR)
+| ID    | Requirement                                                                 |
+|-------|-----------------------------------------------------------------------------|
+| FR-1  | Classify regime: TREND_UP / TREND_DOWN / SIDEWAYS / REVERSAL                 |
+| FR-2  | On confirmed trend, open with-trend credit spread (Bull Put up / Bear Call down) |
+| FR-3  | On turn to sideways, add opposing credit spread → morph to iron fly          |
+| FR-4  | On reversal, close threatened original spread; retain aligned spread as runner |
+| FR-5  | Select weekly-expiry strikes and wings for each structure                   |
+| FR-6  | Manage exactly one live structure per index                                 |
+
+### Risk (RR)
+| ID    | Requirement                                                                 |
+|-------|-----------------------------------------------------------------------------|
+| RR-1  | Cap deploy at ₹2,00,000 per structure                                       |
+| RR-2  | 10% drawdown floor — hard stop on structure/day                             |
+| RR-3  | Per-structure SL and trailing-SL, active in every state incl. RUNNER        |
+| RR-4  | Daily-loss cap; max 2 re-entries per session                                |
+| RR-5  | Mandatory EOD square-off — no overnight risk                                |
+| RR-6  | Risk gate is deterministic and non-overridable by any advisory/LLM layer    |
+
+### Platform (PR)
+| ID    | Requirement                                                                 |
+|-------|-----------------------------------------------------------------------------|
+| PR-1  | Broker authentication and session lifecycle (login, keep-alive, reconnect)  |
+| PR-2  | Instrument resolution: strike ladder, lot size, correct tradingsymbol format |
+| PR-3  | Market-data snapshot: spot, option chain (CE/PE LTP, IV), multi-TF OHLC      |
+| PR-4  | Order place / modify / cancel with fills; idempotent, partial-fill safe      |
+| PR-5  | Position and P&L truth store (single source)                                |
+| PR-6  | Audit trace of every decision and state transition                          |
+| PR-7  | Central configuration of all strategy and risk params                       |
+| PR-8  | Session/cycle orchestration: entry windows, cadence, EOD square-off          |
+
+### Design constraints (NFR)
+| ID    | Constraint                                                                  |
+|-------|-----------------------------------------------------------------------------|
+| NFR-1 | Implementation-agnostic functional design (no stack/broker/agentic lock-in) |
+| NFR-2 | Contracts frozen before logic (Phase 0)                                     |
+| NFR-3 | Skeleton-first: runnable stub pipeline before any real module              |
+
+---
+
+## 10. Glossary
 
 - **Theta** — option time decay; ATOM's primary profit source.
 - **Credit spread** — sell nearer option, buy farther same-type option; net premium received.

@@ -202,3 +202,63 @@ and the contracts are frozen.
 | Strategy FSM               | Strategy | `RegimeState`, `PositionState`        | `StrategyDecision` |
 | Structure Builder          | Strategy | `StrategyDecision`,`MarketSnapshot`,Instrument | `StructurePlan` |
 | Risk Engine (+SL/TSL)      | Strategy | `StructurePlan`, `PositionState`      | `RiskVerdict`      |
+
+---
+
+## 7. Functional Modules & Requirements Traceability
+
+Two lenses on the same system:
+- **Functional module** — a domain capability, grouped by *what the system does* and
+  *why*. Maps to requirements (PROJECT_DOCUMENT.md §9).
+- **Technical module** — the buildable unit that *implements* the capability (§3–§4).
+
+Both are first-class. The **Requirements Traceability Matrix (RTM)** links every
+requirement → functional module → technical module(s), so every line of code and test
+traces to a need, and every requirement is provably covered.
+
+### 7.1 Functional Modules (domain capabilities)
+
+| Functional module        | Purpose (what/why)                                       | Requirements        |
+|--------------------------|----------------------------------------------------------|---------------------|
+| FM-Regime                | Read the market, name the regime                         | FR-1                |
+| FM-Lifecycle             | The adaptive theta state machine (entry→morph→runner→exit)| FR-2, FR-3, FR-4, FR-6 |
+| FM-StructureSelection    | Choose weekly strikes/wings for each structure           | FR-5                |
+| FM-RiskControl           | Sizing, deploy cap, DD floor, daily-loss, re-entry, gate | RR-1, RR-2, RR-4, RR-6 |
+| FM-StopManagement        | SL / TSL / TP setting and trailing                       | RR-3                |
+| FM-SessionLifecycle      | Entry windows, cadence, EOD square-off                   | RR-5, PR-8          |
+| FM-Connectivity          | Broker auth + session                                    | PR-1                |
+| FM-InstrumentResolution  | Strike ladder, lots, tradingsymbol format                | PR-2                |
+| FM-MarketData            | Spot, chain, IV, multi-TF OHLC acquisition               | PR-3                |
+| FM-Execution             | Place/modify/cancel orders, capture fills                | PR-4                |
+| FM-Bookkeeping           | Position + P&L truth store                               | PR-5                |
+| FM-Audit                 | Decision/transition trace, explainability                | PR-6                |
+| FM-Configuration         | Central params                                           | PR-7                |
+
+### 7.2 Requirements Traceability Matrix
+
+| Req   | Functional module       | Technical module(s)                          |
+|-------|-------------------------|----------------------------------------------|
+| FR-1  | FM-Regime               | Regime Engine                                |
+| FR-2  | FM-Lifecycle            | Strategy FSM → Structure Builder → Order/Trade|
+| FR-3  | FM-Lifecycle            | Strategy FSM → Structure Builder → Order/Trade|
+| FR-4  | FM-Lifecycle            | Strategy FSM → Structure Builder → Order/Trade|
+| FR-5  | FM-StructureSelection   | Structure Builder + Instrument & Symbol Master|
+| FR-6  | FM-Lifecycle            | Strategy FSM + Ledger                         |
+| RR-1  | FM-RiskControl          | Risk Engine                                  |
+| RR-2  | FM-RiskControl          | Risk Engine + Ledger                         |
+| RR-3  | FM-StopManagement       | Risk Engine → SL/TSL sub-engine              |
+| RR-4  | FM-RiskControl          | Risk Engine + Ledger                         |
+| RR-5  | FM-SessionLifecycle     | Orchestrator + Risk Engine + Order/Trade     |
+| RR-6  | FM-RiskControl          | Risk Engine (gate; Agentic Overlay read-only)|
+| PR-1  | FM-Connectivity         | Auth & Session                               |
+| PR-2  | FM-InstrumentResolution | Instrument & Symbol Master                   |
+| PR-3  | FM-MarketData           | Market Data                                  |
+| PR-4  | FM-Execution            | Order / Trade                                |
+| PR-5  | FM-Bookkeeping          | Ledger / Persistence                         |
+| PR-6  | FM-Audit                | Telemetry / Audit                            |
+| PR-7  | FM-Configuration        | Config                                       |
+| PR-8  | FM-SessionLifecycle     | Orchestrator / Scheduler                     |
+
+Coverage check: every FR/RR/PR maps to ≥1 technical module; every technical module
+serves ≥1 requirement. NFR-1..3 are design constraints honored across all modules
+(contracts in §2, skeleton in §5).
