@@ -186,12 +186,22 @@ traceability matrix (requirement → functional → technical) is in TECHNICAL_D
 | PR-7  | Central configuration of all strategy and risk params                       |
 | PR-8  | Session/cycle orchestration: entry windows, cadence, EOD square-off          |
 
+### Learning / Research (LR)
+| ID    | Requirement                                                                 |
+|-------|-----------------------------------------------------------------------------|
+| LR-1  | EOD post-mortem at trade / session / regime granularity (built in phases)   |
+| LR-2  | Optimize for drawdown-adjusted PnL and survival, not raw return             |
+| LR-3  | Emit a daily candidate ParameterSet (fixed numbers + rationale + evidence)  |
+| LR-4  | EOD safety checks + morning human approval gate before params go live       |
+| LR-5  | Candidate must pass PORCUPINE backtest + 1–2 days successful PnL before production |
+
 ### Design constraints (NFR)
 | ID    | Constraint                                                                  |
 |-------|-----------------------------------------------------------------------------|
 | NFR-1 | Implementation-agnostic functional design (no stack/broker/agentic lock-in) |
 | NFR-2 | Contracts frozen before logic (Phase 0)                                     |
 | NFR-3 | Skeleton-first: runnable stub pipeline before any real module              |
+| NFR-4 | AI never in the live trading loop; learning is offline + gated (two-loop)   |
 
 ---
 

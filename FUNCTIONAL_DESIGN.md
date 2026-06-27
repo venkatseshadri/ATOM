@@ -206,7 +206,96 @@ in TECHNICAL_DESIGN.md Risk Engine):
 
 ---
 
-## 7. Functional Modules (domain capabilities)
+## 7. Post-Mortem, Optimization & the Feedback Loop
+
+The trading loop is deterministic and never learns mid-session. Learning happens
+**after hours** in a separate loop that studies what happened, proposes better numbers,
+proves them on historical data, and hands a **single approved parameter set** to the
+next day's deterministic system. AI proposes; the human approves; the deterministic
+Python trades. No model sits in the live path.
+
+### 7.1 Post-Mortem Research
+
+Studies completed activity at three granularities — **designed now, built in phases**:
+
+| Granularity | Asks                                                                              | Phase |
+|-------------|-----------------------------------------------------------------------------------|-------|
+| Per-trade   | Why did this structure win/lose? entry timing, strike/greek choice, slippage, which exit fired | first |
+| Per-session | Day-level: regime calls right? morphs timely? SL/TSL efficacy? PnL vs theta captured | next  |
+| Per-regime  | Across many days: which family read true vs misfired per regime; where edge concentrates | later |
+
+Scored dimensions (metrics ‹TBD›): family hit/miss, greek drift, slippage, SL/TSL
+effectiveness, missed/late morphs, entry timing, theta-capture ratio.
+
+### 7.2 Objective Function
+
+Optimize for **drawdown-adjusted PnL and survival**, not raw return. Thesis: a credit-
+theta edge compounds over time *provided losers are contained and the account
+survives*. The loop prefers parameter sets that shrink tail losses and smooth the
+equity curve, even at some give-up in gross PnL. (Exact metric — e.g. PnL/maxDD or a
+survival-weighted score — ‹TBD›.)
+
+### 7.3 What Optimization May Tune
+
+- **Signal:** family weights, regime thresholds.
+- **Strategy:** strike/greek bands, DTE/expiry choice, morph triggers.
+- **Risk params:** SL / TSL / sizing — to suit realised PnL — **as overnight proposals only**.
+
+> **Reconciles with RR-6 (deterministic, non-overridable risk gate):** the loop never
+> touches a *live* position or relaxes the gate during a session. It only proposes *new
+> parameter values* for the next day, effective after the morning approval gate.
+> Runtime = frozen numbers; tuning = offline, gated.
+
+### 7.4 Method
+
+**AI/LLM-first** — reason over trade traces + market context, propose changes and
+explain them. Statistical search (grid / Bayesian) accepted where it yields cleaner
+insight. Either way the output is **concrete numbers + a rationale**, never a black box.
+
+### 7.5 Cadence
+
+**EOD daily** by default (weekly fallback if daily proves too noisy/soon). Each run
+emits at most one candidate parameter set for the next session.
+
+### 7.6 Connect-Back — the Daily Approved Parameter Set
+
+How learning safely reaches deterministic trading:
+
+```
+  Trade day (deterministic, frozen params)
+        │ trades + telemetry
+        ▼
+  EOD ── Post-Mortem ──► Optimization ──► candidate ParameterSet  +  safety checks
+                                              │
+                                              ▼
+                          PORCUPINE backtest on historical data
+                          (must show successful PnL)
+                                              │
+                                              ▼
+  Morning ── Human approval gate (insights + test results reviewed)
+                                              │ approved
+                                              ▼
+  Next trade day runs the FROZEN approved ParameterSet (no AI in loop)
+```
+
+- Deliverable = a **ParameterSet**: fixed numbers (family weights, thresholds, greek
+  bands, SL/TSL, sizing) + the backtest evidence behind it.
+- **EOD safety checks** before a set is even offered (sanity bounds, no degenerate values).
+- **Morning human approval** — operator reviews insights + historical test PnL, approves
+  the set for the day.
+- **Promotion to production** — a candidate must show **1–2 days of successful PnL**
+  (backtest/paper) before it drives real capital; limits ‹TBD›.
+
+### 7.7 Open Questions
+- Long-term connect-back model: human-gated (a) vs bounded auto-apply (b) vs shadow/A-B
+  promote (c). **Default now = (a)**, morning approval.
+- Exact survival/drawdown metric and its guardrails.
+- Daily vs weekly cadence once live data is seen.
+- Promotion threshold (how many days / what PnL bar) before production.
+
+---
+
+## 8. Functional Modules (domain capabilities)
 
 The *what/why* groupings. Each maps to requirement IDs (PROJECT_DOCUMENT.md §9) and to
 one or more technical modules (TECHNICAL_DESIGN.md §7 RTM).
@@ -226,10 +315,13 @@ one or more technical modules (TECHNICAL_DESIGN.md §7 RTM).
 | FM-Bookkeeping           | Position + P&L truth store                                | PR-5                   |
 | FM-Audit                 | Decision/transition trace, explainability                 | PR-6                   |
 | FM-Configuration         | Central params                                            | PR-7                   |
+| FM-PostMortem            | Trade/session/regime autopsy + scoring                    | LR-1                   |
+| FM-Optimization          | Drawdown-adjusted/survival objective; propose ParameterSet| LR-2, LR-3             |
+| FM-FeedbackGate          | EOD safety + morning approval + promotion gate            | LR-4, LR-5             |
 
 ---
 
-## 8. Open Strategy Questions (for deep-grilling)
+## 9. Open Strategy Questions (for deep-grilling)
 
 - The exact member indicators inside each of the 7 families, and their timeframes.
 - Family weighting and the consensus rule (vote count? weighted score? veto?).

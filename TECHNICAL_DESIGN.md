@@ -61,6 +61,7 @@ The only things modules exchange. Functional field lists; pinned to schemas in P
 | `Fill`            | Order/Trade        | order id, leg, fill price, qty, status, timestamp                                  |
 | `PositionState`   | Ledger             | FSM state, open legs, entry prices, live P&L, realized P&L                          |
 | `TraceEvent`      | every module       | source, type, payload, timestamp                                                   |
+| `ParameterSet`    | Research Loop      | family weights, regime thresholds, greek bands, SL/TSL, sizing, evidence, approval state |
 
 ---
 
@@ -238,6 +239,11 @@ covered both ways.
 | PR-6  | FM-Audit                | Telemetry / Audit                            |
 | PR-7  | FM-Configuration        | Config                                       |
 | PR-8  | FM-SessionLifecycle     | Orchestrator / Scheduler                     |
+| LR-1  | FM-PostMortem           | Research Loop (post-mortem) + Ledger/Telemetry|
+| LR-2  | FM-Optimization         | Research Loop (optimizer)                    |
+| LR-3  | FM-Optimization         | Research Loop → ParameterSet → Config         |
+| LR-4  | FM-FeedbackGate         | Approval Gate + Config                        |
+| LR-5  | FM-FeedbackGate         | Approval Gate + Sim/Replay Harness (PORCUPINE)|
 
 Coverage check: every FR/RR/PR maps to ≥1 technical module; every technical module
 serves ≥1 requirement. NFR-1..3 are design constraints honored across all modules
@@ -251,32 +257,39 @@ A hard separation: **AI stays out of the trading loop.** ATOM runs two loops at
 different cadences.
 
 ```
-   FAST — TRADING LOOP (deterministic, every cycle)
+   FAST — TRADING LOOP (deterministic, every cycle, intraday)
    ┌──────────────────────────────────────────────────────────────────┐
    │ Market Data → Regime → Strategy FSM → Structure Builder → Risk →  │
    │ Order/Trade → Ledger → Telemetry                                  │
-   │ No LLM in this path. Reads params + (optional) cached research.   │
+   │ No LLM in this path. Runs the day's FROZEN approved ParameterSet. │
    └───────────────▲───────────────────────────────┬──────────────────┘
-                   │ reads cache                     │ writes trades/telemetry
-                   │ (params, weights)               ▼
+        reads day's│ ParameterSet (fixed numbers)   │ trades + telemetry
+        ┌──────────┴──────────┐                     ▼
+        │  Morning Approval    │◄── operator approves (insights + test PnL)
+        │  Gate (human)        │
+        └──────────▲──────────┘
+                   │ candidate ParameterSet + backtest evidence
    ┌───────────────┴──────────────────────────────────────────────────┐
-   │ SLOW — RESEARCH LOOP (AI, infrequent: e.g. EOD / periodic)        │
-   │ inputs: trade history, regime stats, indicator efficacy, P&L      │
-   │ outputs: RESEARCH CACHE — suggested family weights, greek bands,  │
-   │          pattern findings. Advisory only; risk gate still applies.│
+   │ SLOW — RESEARCH LOOP (AI-first, EOD daily / weekly fallback)      │
+   │ post-mortem (trade/session/regime) → optimize (DD-adj PnL +       │
+   │ survival) → candidate ParameterSet → PORCUPINE backtest + safety  │
+   │ checks. Advisory only; never calls broker, never relaxes risk.    │
    └──────────────────────────────────────────────────────────────────┘
 ```
 
 Properties:
-- **Determinism in the hot path** — the trading loop is fully testable/replayable; no
-  LLM latency, non-determinism, or hallucination can touch a live order.
-- **Research is read-only and async** — it writes a cache the fast loop *may* read; it
-  never calls the broker and never relaxes risk.
-- **Cadence** — research runs far less often than the trading cycle (e.g. between
-  sessions). Mirrors the house position-research-cache pattern.
+- **Determinism in the hot path** — the trading loop runs fixed numbers; no LLM latency,
+  non-determinism, or hallucination can touch a live order.
+- **Research is offline + gated** — it emits a candidate ParameterSet, never trades.
+  Output reaches live only through the morning human-approval gate.
+- **Cadence** — EOD daily (weekly fallback). Mirrors the house position-research-cache
+  pattern.
+- **Promotion** — a candidate must pass PORCUPINE backtest + 1–2 days successful PnL
+  before it drives real capital (LR-5).
 
-`ResearchCache` is a contract object: { family weight suggestions, greek-band
-suggestions, pattern notes, generated-at, validity window }.
+`ParameterSet` is a contract object: { family weights, regime thresholds, greek bands,
+SL/TSL, sizing, generated-at, validity (the trading day), backtest evidence ref,
+approval state }. The trading loop loads exactly one approved `ParameterSet` per day.
 
 ---
 
@@ -358,9 +371,12 @@ flowchart TD
     H -- approved --> I[Order/Trade: place legs -> Fills]
     I --> J[Ledger: update PositionState + P&L]
     J --> Z
-    subgraph slow[Research Loop - async, infrequent]
-      R[AI: analyse history] --> RC[(Research Cache)]
+    subgraph slow[Research Loop - EOD, AI-first, offline]
+      R[Post-mortem: trade/session/regime] --> O[Optimize: DD-adj PnL + survival]
+      O --> PC[PORCUPINE backtest + safety checks]
+      PC --> PS[(candidate ParameterSet)]
+      PS --> AP{Morning human approval}
     end
-    RC -. optional read .-> D
-    RC -. optional read .-> G
+    AP -- approved --> CFG[(Day's frozen ParameterSet in Config)]
+    CFG --> A
 ```
