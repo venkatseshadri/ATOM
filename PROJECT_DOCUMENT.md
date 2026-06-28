@@ -116,7 +116,10 @@ No date or time commitments — sequencing only.
 ```
 
 The module-build order *within* each phase follows the contract dependency chain in
-TECHNICAL_DESIGN.md §5.
+TECHNICAL_DESIGN.md §5. The **gated execution map** — which module reaches which maturity
+in each phase, the per-phase Definition of Done, and the Board approval gates — is in
+**BUILD_PLAN.md**. A phase is complete only when its DoD checklist passes and the Board
+signs the gate; the next phase cannot start before that.
 
 ### 6.2 Build Approach — OUROBOROS
 

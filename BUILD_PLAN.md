@@ -1,0 +1,118 @@
+# ATOM — Build Plan (gated phase execution)
+
+**The execution map.** Ties phases → modules → maturity → functional/requirement mapping
+→ **Definition of Done (DoD)** → **Board approval gate**. An implementer (or the OUROBOROS
+build loop) works one phase at a time; a phase is "done" only when its DoD checklist
+passes and the Board signs the gate. **Phase N+1 must not start until GATE N is approved.**
+
+## How the documents relate
+
+| Layer | Doc | Answers |
+|-------|-----|---------|
+| Charter + schedule | `PROJECT_DOCUMENT.md` | why, scope, phase sequence, requirements (FR/RR/PR/LR/NFR) |
+| Trading spec | `FUNCTIONAL_DESIGN.md` | what a good trader does (regime, greeks, lifecycle) — functional modules `FM-*` |
+| Architecture | `TECHNICAL_DESIGN.md` | buildable technical modules, contracts, two-loop, RTM |
+| **Bridge / build unit** | `modules/NN-*/NN-*.md` | per-module behavioral decomposition + line items `NN.x` + Given/When/Then tests |
+| **Execution** | `BUILD_PLAN.md` (this) | which modules in which phase, DoD, gates |
+
+**Build unit = a module's line items.** Within `modules/NN-*.md`, each `NN.x[.y]` node is a
+work ticket; its **Functional Test Case (Given/When/Then)** is the ticket's acceptance
+test. A module is "done for a phase" when its in-scope line items pass at the phase's
+required maturity.
+
+**Maturity levels:** `STUB` (contract in/out + trace, no logic) → `REAL` (logic implemented,
+tested) → `LIVE` (wired to broker/real money).
+
+---
+
+## Phase → Module map
+
+| Phase | Goal | Modules in scope (maturity) | Functional (`FM-*`) | Requirements |
+|-------|------|------------------------------|---------------------|--------------|
+| **0 Skeleton** | Freeze contracts; stub all | **ALL 1–16 → STUB** | all | NFR-1,2,3 |
+| **1 Regime + Signal** | Read market, classify, decide (dry) | 1,2,3 → REAL; 12,16 → minimal REAL; 15 → STUB+ | FM-MarketData, FM-Regime, FM-Lifecycle | FR-1,2,3,4,6; PR-3 |
+| **2 Strike + Structure** | Decisions → concrete weekly legs (paper) | 4 → REAL; 12 → REAL | FM-StructureSelection, FM-InstrumentResolution | FR-5; PR-2 |
+| **3 Risk + Execution** | Hard gate + stops + order placement (paper) | 5,6,13,7 → REAL; 11 → REAL | FM-RiskControl, FM-StopManagement, FM-Execution, FM-SessionLifecycle, FM-Connectivity | RR-1..6; PR-1,4,8 |
+| **4 Ledger + Monitor** | Position truth, P&L, audit, config | 14,15 → REAL; 16 → REAL | FM-Bookkeeping, FM-Audit, FM-Configuration | PR-5,6,7 |
+| **5 Research Loop** | Offline learning → ParameterSet (gated) | 8,9,10 → REAL | FM-PostMortem, FM-Optimization, FM-FeedbackGate | LR-1..5; NFR-4 |
+| **6 Validation** | Prove expectancy on paper/backtest | (no new modules) | — | go-live blocker |
+| **7 Live** | Wire real capital | 11,13 → LIVE | — | post-validation |
+
+> Modules appear in more than one phase by maturity (e.g. 12 minimal in P1, full in P2; 16
+> minimal in P1, full in P4). A later phase may harden an earlier module — note it in that
+> phase's DoD.
+
+---
+
+## Per-phase Definition of Done + Gate
+
+Check every box, then the Board signs the gate. Unchecked = phase not done.
+
+### Phase 0 — Skeleton  ☐ GATE 0
+- [ ] Every contract object (`TECHNICAL_DESIGN.md §2`) defined and frozen.
+- [ ] All 16 modules exist as STUB: accept input contract, emit a trace, return canned output.
+- [ ] Orchestrator runs one full pass end-to-end: `Session → Instrument → MarketSnapshot →
+      RegimeState → StrategyDecision → StructurePlan → RiskVerdict → Fill → PositionState`.
+- [ ] Each module emits a trace line; pipeline is runnable and logged.
+- [ ] Stub test suite green in CI.
+- **Gate 0 (Board):** approve frozen contracts + skeleton. → unlocks Phase 1.
+
+### Phase 1 — Regime + Signal  ☐ GATE 1
+- [ ] Module 1 supplies a real/replayed `MarketSnapshot` (spot, chain, IV/greeks, multi-TF OHLC).
+- [ ] Module 2 produces a regime label + confidence from the **7 indicator families** (line items 2.x pass).
+- [ ] Module 3 FSM emits open/morph/hold/exit decisions; all transition test cases pass.
+- [ ] Runs on replayed data, **no orders placed**.
+- [ ] Line-item Given/When/Then tests for modules 1,2,3 pass.
+- **Gate 1 (Board):** review regime calls + decisions on replay. → unlocks Phase 2.
+
+### Phase 2 — Strike + Structure  ☐ GATE 2
+- [ ] Module 12 resolves weekly expiry, strike ladder, lot/tick, correct per-index tradingsymbol.
+- [ ] Module 4 turns a decision into concrete legs (strike/wing/qty/price), greek-driven, paper only.
+- [ ] Construction + instrument line-item tests pass (incl. NIFTY vs SENSEX symbol formats).
+- **Gate 2 (Board):** review generated structures for sanity. → unlocks Phase 3.
+
+### Phase 3 — Risk + Execution  ☐ GATE 3
+- [ ] Module 5 enforces deploy cap, DD floor, daily-loss, re-entries, sizing — **property tests prove no path breaches**.
+- [ ] Module 6 sets and trails SL/TSL/TP; breach raises exit.
+- [ ] Module 11 maintains an authenticated session; reconnect handled.
+- [ ] Module 13 places/cancels orders and captures fills (paper); partial/reject handled.
+- [ ] Module 7 enforces entry windows + mandatory EOD square-off.
+- [ ] Risk gate is non-overridable (RR-6) — test proves it.
+- **Gate 3 (Board):** review full paper trade lifecycle + risk invariants. → unlocks Phase 4.
+
+### Phase 4 — Ledger + Monitor  ☐ GATE 4
+- [ ] Module 14 is single source of truth: applies fills, correct live + realized P&L, restart recovery.
+- [ ] Module 15 audit trail reconstructs any trade end-to-end.
+- [ ] Module 16 serves the day's frozen config/ParameterSet.
+- [ ] Ledger reconciles against execution; no split-brain.
+- **Gate 4 (Board):** review P&L accuracy + audit reconstruction. → unlocks Phase 5.
+
+### Phase 5 — Research Loop  ☐ GATE 5
+- [ ] Module 8 produces trade/session/regime post-mortem scores.
+- [ ] Module 9 emits a candidate `ParameterSet` optimizing drawdown-adjusted PnL + survival, with rationale.
+- [ ] Module 10 runs EOD safety + PORCUPINE backtest + morning human approval before a set goes live.
+- [ ] Proven: **AI never in the trading loop** (NFR-4) — research writes cache only, risk-gated.
+- **Gate 5 (Board):** review a full learn→propose→approve cycle. → unlocks Phase 6.
+
+### Phase 6 — Validation  ☐ GATE 6 (GO/NO-GO)
+- [ ] Positive **drawdown-adjusted expectancy** on paper/backtest over the agreed window.
+- [ ] PORCUPINE harness green across scenario catalogue.
+- [ ] Promotion bar met (1–2 days successful simulated PnL, LR-5).
+- **Gate 6 (Board): GO/NO-GO for real capital.** → unlocks Phase 7.
+
+### Phase 7 — Live  ☐ GATE 7
+- [ ] Live broker wiring; shadow run matches paper.
+- [ ] Small-size live, monitored; rollback path proven.
+- **Gate 7 (Board):** approve scale-up.
+
+---
+
+## Current status
+
+Design phase. **No code yet** — modules 1–16 exist as *discovery docs*, not implementations.
+Next executable step = **Phase 0**: derive the frozen contracts from the module docs, build
+16 stubs, wire the orchestrator. When the Phase 0 DoD above is all-checked, Board signs
+GATE 0 and Phase 1 begins.
+
+Seam reconciliation across module docs (e.g. 4 vs 13 on price) is a **pre-Phase-0** cleanup,
+deferred pending Board review of the module docs.
