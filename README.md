@@ -16,6 +16,7 @@ phases (Phase 0 = runnable skeleton, contracts frozen).
 | **[TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md)** | *How* — technical modules, contracts, Phase 0 skeleton, requirements traceability matrix. |
 | **[BUILD_PLAN.md](BUILD_PLAN.md)** | *When* — gated phase execution: phase → modules → Definition of Done → Board gate. |
 | **[modules/](modules/README.md)** | Per-module behavioral decomposition (the build unit): line items + Given/When/Then tests. |
+| **[phases/](phases/README.md)** | Execution view — 7 phase folders (0–6), each with functional / technical / testcases docs + Board gate. |
 
 Requirements (PROJECT_DOCUMENT) → functional modules (FUNCTIONAL_DESIGN) → technical
 modules (TECHNICAL_DESIGN) are linked by the RTM in TECHNICAL_DESIGN.md §7.
