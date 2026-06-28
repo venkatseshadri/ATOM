@@ -29,5 +29,17 @@ class Telemetry:
         if self.echo:
             print(f"\n>>> {title}")
 
+    def enter(self, source: str, qual: str, rel: str, line: int) -> None:
+        self.events.append(TraceEvent(source, "ENTER",
+                                      {"qual": qual, "file": rel, "line": line}, now()))
+        if self.echo:
+            print(f"  → ENTER {qual:<30} [{rel}:{line}]  « stub — no business logic yet »")
+
+    def exit(self, source: str, qual: str, returns: str) -> None:
+        self.events.append(TraceEvent(source, "EXIT",
+                                      {"qual": qual, "returns": returns}, now()))
+        if self.echo:
+            print(f"  ← EXIT  {qual:<30} → returns {returns}")
+
     def sources(self) -> set[str]:
         return {e.source for e in self.events}

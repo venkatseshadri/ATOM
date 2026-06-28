@@ -9,6 +9,8 @@ modules emits a trace.
 """
 from __future__ import annotations
 
+import inspect
+import os
 from dataclasses import dataclass
 
 from .config import Config
@@ -22,7 +24,7 @@ from .modules.structure_builder import StructureBuilder
 from .modules.risk import Risk
 from .modules.order import Order
 from .modules.ledger import Ledger
-from .modules.stops import StopManagement
+from .modules.stop_management import StopManagement
 from .modules.market_session import MarketSession
 from .modules.post_mortem import PostMortem
 from .modules.optimization import Optimization
@@ -74,35 +76,52 @@ class Orchestrator:
         self.optimization = Optimization(self.t)
         self.feedback_gate = FeedbackGate(self.t)
 
+    def _call(self, obj, method: str, *args, **kwargs):
+        """Invoke a module method through enter/exit code-level tracing.
+
+        Prints which file + module.method ran; the method body (the "meat") is an
+        unimplemented stub in Phase 0. This is what makes the run technically
+        validatable against the built files.
+        """
+        fn = getattr(obj, method)
+        short = type(obj).__module__.rsplit(".", 1)[-1]
+        qual = f"{type(obj).__name__}.{method}"
+        rel = os.path.relpath(inspect.getsourcefile(fn))
+        line = fn.__code__.co_firstlineno
+        self.t.enter(short, qual, rel, line)
+        result = fn(*args, **kwargs)
+        self.t.exit(short, qual, type(result).__name__)
+        return result
+
     def run_cycle(self, index: str = "NIFTY") -> CycleResult:
         self.t.stage("CONNECT & SESSION")
-        self.session_mod.tick()
-        param_set = self.config.parameter_set()
-        account = self.config.account_state()
-        session = self.auth.login()
-        instrument = self.instrument.resolve(index)
+        self._call(self.session_mod, "tick")
+        param_set = self._call(self.config, "parameter_set")
+        account = self._call(self.config, "account_state")
+        session = self._call(self.auth, "login")
+        instrument = self._call(self.instrument, "resolve", index)
 
         self.t.stage("DATA CAPTURE & FLOW")
-        snapshot = self.market_data.snapshot(index, session)
+        snapshot = self._call(self.market_data, "snapshot", index, session)
 
         self.t.stage("MONITOR & DECIDE")
-        regime = self.regime.classify(snapshot)
+        regime = self._call(self.regime, "classify", snapshot)
         position = self.ledger.flat()
-        decision = self.fsm.decide(regime, position)
+        decision = self._call(self.fsm, "decide", regime, position)
 
         self.t.stage("CONSTRUCT & RISK")
-        plan = self.builder.build(decision, snapshot, instrument)
-        verdict = self.risk.gate(plan, account, position)
+        plan = self._call(self.builder, "build", decision, snapshot, instrument)
+        verdict = self._call(self.risk, "gate", plan, account, position)
 
         self.t.stage("EXECUTE")
-        fills = self.order.execute(plan, verdict, session)
-        position = self.ledger.apply(fills)
-        self.stops.manage(position, snapshot)
+        fills = self._call(self.order, "execute", plan, verdict, session)
+        position = self._call(self.ledger, "apply", fills)
+        self._call(self.stops, "manage", position, snapshot)
 
         self.t.stage("RESEARCH LOOP (offline preview)")
-        findings = self.post_mortem.analyze(trades=[], traces=self.t.events)
-        candidate = self.optimization.propose(findings)
-        self.feedback_gate.evaluate(candidate)
+        findings = self._call(self.post_mortem, "analyze", [], self.t.events)
+        candidate = self._call(self.optimization, "propose", findings)
+        self._call(self.feedback_gate, "evaluate", candidate)
 
         return CycleResult(
             session=session, instrument=instrument, snapshot=snapshot,
