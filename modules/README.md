@@ -9,8 +9,9 @@ Each leaf node carries: **Responsibility · Behavior/Actions · Scenarios & Poss
 Market-condition scenarios are parked per-module under `## Suggestions (for bubble-up)`
 for later review.
 
-> Status: first-pass discovery. **Cross-module seam reconciliation is deferred** (pending
-> Board review & refine). Expect overlaps between adjacent modules (e.g. 4 vs 13).
+> Status: first-pass discovery. Overlaps between adjacent modules (e.g. 4 vs 13) are
+> resolved authoritatively in **[../SEAM_RECONCILIATION.md](../SEAM_RECONCILIATION.md)** —
+> where a module doc here conflicts with a seam ruling there, **the seam doc wins.**
 
 Build phase per module is in **[../BUILD_PLAN.md](../BUILD_PLAN.md)** — the gated execution
 map (phase → modules → DoD → Board gate). "Build phase" below = the phase where the module
