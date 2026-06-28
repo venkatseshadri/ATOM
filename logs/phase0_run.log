@@ -1,0 +1,39 @@
+# ATOM Phase 0 — run log
+# generated: 2026-06-28T14:41:51Z UTC
+# command: python3 run_phase0.py
+# python: Python 3.12.3
+# commit: 9f1d39b
+----------------------------------------------------------------------
+=== ATOM Phase 0 skeleton — one pass ===
+[trace] telemetry        init                   
+[trace] market_session   tick                   {'phase': 'OPEN'}
+[trace] config           serve_parameter_set    {'version': 'phase0-canned'}
+[trace] config           serve_account_state    {'note': 'G1 placeholder'}
+[trace] auth             login                  
+[trace] instrument       resolve                {'index': 'NIFTY'}
+[trace] market_data      snapshot               {'index': 'NIFTY'}
+[trace] regime           classify               {'index': 'NIFTY'}
+[trace] strategy_fsm     decide                 {'regime': 'SIDEWAYS', 'state': 'FLAT'}
+[trace] structure_builder build                  {'intent': 'OPEN'}
+[trace] risk             gate                   {'legs': 1}
+[trace] order            execute                {'approved': True}
+[trace] ledger           apply                  {'fills': 1}
+[trace] stop_management  manage                 {'state': 'SINGLE_SPREAD'}
+[trace] post_mortem      analyze                {'trades': 0}
+[trace] optimization     propose                
+[trace] feedback_gate    evaluate               {'approved': True}
+
+=== contract objects produced (pipeline order) ===
+  session        -> Session
+  instrument     -> Instrument
+  snapshot       -> MarketSnapshot
+  regime         -> RegimeState
+  decision       -> StrategyDecision
+  plan           -> StructurePlan
+  account        -> AccountState
+  verdict        -> RiskVerdict
+  fills          -> list
+  position       -> PositionState
+  parameter_set  -> ParameterSet
+
+modules that emitted a trace: 16/16

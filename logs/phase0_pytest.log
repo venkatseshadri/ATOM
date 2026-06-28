@@ -1,0 +1,22 @@
+# ATOM Phase 0 — pytest log
+# generated: 2026-06-28T14:41:51Z UTC
+# command: python3 -m pytest -v
+# commit: 9f1d39b
+----------------------------------------------------------------------
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.12.3', 'Platform': 'Linux-6.8.0-117-generic-x86_64-with-glibc2.39', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'cov': '7.0.0', 'metadata': '3.1.1', 'anyio': '4.13.0', 'json-report': '1.5.0', 'mock': '3.15.1'}}
+rootdir: /home/trading_ceo/atom
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-7.0.0, metadata-3.1.1, anyio-4.13.0, json-report-1.5.0, mock-3.15.1
+collecting ... collected 5 items
+
+tests/test_phase0_skeleton.py::test_pipeline_runs_end_to_end PASSED      [ 20%]
+tests/test_phase0_skeleton.py::test_all_sixteen_modules_emit_a_trace PASSED [ 40%]
+tests/test_phase0_skeleton.py::test_contracts_are_frozen PASSED          [ 60%]
+tests/test_phase0_skeleton.py::test_contract_registry_complete PASSED    [ 80%]
+tests/test_phase0_skeleton.py::test_regime_stub_is_canned_not_behavioural PASSED [100%]
+
+============================== 5 passed in 0.02s ===============================
