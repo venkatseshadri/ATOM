@@ -1,10 +1,11 @@
 """ATOM Orchestrator (Phase 0).
 
-Wires all 16 modules into one logged pass:
-  Session -> Instrument -> MarketSnapshot -> RegimeState -> StrategyDecision ->
-  StructurePlan -> RiskVerdict -> Fill -> PositionState
-plus a market-session tick (7) and a research-loop pass (8->9->10), so every one
-of the 16 modules emits a trace. No trading logic — proves the skeleton.
+Wires all 16 modules into one logged pass that narrates a full session flow with
+illustrative (hard-coded) values:
+  connect/auth -> data capture/flow -> monitor/indicators -> entry criteria ->
+  construct spread -> risk gate -> order placed (short + hedge) -> position open.
+No trading logic — proves the skeleton and freezes the seams. Every one of the 16
+modules emits a trace.
 """
 from __future__ import annotations
 
@@ -56,8 +57,7 @@ EXPECTED_SOURCES = {
 class Orchestrator:
     def __init__(self, telemetry: Telemetry | None = None) -> None:
         self.t = telemetry or Telemetry()
-        # telemetry self-registers so it appears as a source
-        self.t.emit("telemetry", "init", {})
+        self.t.emit("telemetry", "init", msg="TELEMETRY → audit trail open")
         self.config = Config(self.t)
         self.auth = Auth(self.t)
         self.instrument = InstrumentMaster(self.t)
@@ -75,25 +75,31 @@ class Orchestrator:
         self.feedback_gate = FeedbackGate(self.t)
 
     def run_cycle(self, index: str = "NIFTY") -> CycleResult:
-        # --- market session + config (day setup) ---
+        self.t.stage("CONNECT & SESSION")
         self.session_mod.tick()
         param_set = self.config.parameter_set()
         account = self.config.account_state()
-
-        # --- trading loop (deterministic hot path) ---
         session = self.auth.login()
         instrument = self.instrument.resolve(index)
+
+        self.t.stage("DATA CAPTURE & FLOW")
         snapshot = self.market_data.snapshot(index, session)
+
+        self.t.stage("MONITOR & DECIDE")
         regime = self.regime.classify(snapshot)
         position = self.ledger.flat()
         decision = self.fsm.decide(regime, position)
+
+        self.t.stage("CONSTRUCT & RISK")
         plan = self.builder.build(decision, snapshot, instrument)
         verdict = self.risk.gate(plan, account, position)
+
+        self.t.stage("EXECUTE")
         fills = self.order.execute(plan, verdict, session)
         position = self.ledger.apply(fills)
         self.stops.manage(position, snapshot)
 
-        # --- research loop (offline; here just to exercise the stubs) ---
+        self.t.stage("RESEARCH LOOP (offline preview)")
         findings = self.post_mortem.analyze(trades=[], traces=self.t.events)
         candidate = self.optimization.propose(findings)
         self.feedback_gate.evaluate(candidate)

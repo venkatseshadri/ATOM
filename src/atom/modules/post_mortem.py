@@ -7,5 +7,7 @@ class PostMortem:
         self.t = telemetry
 
     def analyze(self, trades: list, traces: list) -> dict:
-        self.t.emit("post_mortem", "analyze", {"trades": len(trades)})
+        self.t.emit("post_mortem", "analyze", {"trades": len(trades)},
+                    msg=f"POST-MORTEM → scoring {len(trades)} trades / "
+                        f"{len(traces)} trace events (per-trade/session/regime)")
         return {"per_trade": [], "per_session": {}, "per_regime": {}}

@@ -9,8 +9,9 @@ class Ledger:
         self.t = telemetry
 
     def apply(self, fills: list[Fill]) -> PositionState:
-        self.t.emit("ledger", "apply", {"fills": len(fills)})
         state = "SINGLE_SPREAD" if fills else "FLAT"
+        self.t.emit("ledger", "apply", {"state": state, "fills": len(fills)},
+                    msg=f"POSITION open → {state}, {len(fills)} legs filled, live P&L ₹0")
         return PositionState(fsm_state=state, legs=(), live_pnl=0.0, realized_pnl=0.0)
 
     def flat(self) -> PositionState:

@@ -10,7 +10,10 @@ class Risk:
 
     def gate(self, plan: StructurePlan, account: AccountState,
              position: PositionState) -> RiskVerdict:
-        self.t.emit("risk", "gate", {"legs": len(plan.legs)})
         qty = plan.legs[0].qty if plan.legs else 0
+        self.t.emit("risk", "gate", {"approved": True, "max_loss": plan.max_loss},
+                    msg=f"RISK gate → deploy ₹{account.available_funds:,.0f}, "
+                        f"size 1 lot ({qty}), max loss ₹{plan.max_loss:,.0f} ≤ cap "
+                        f"→ APPROVED")
         return RiskVerdict(approved=True, adjusted_qty=qty, breached=(),
-                           sl=0.0, tsl=0.0, tp=0.0)
+                           sl=plan.max_loss, tsl=0.0, tp=round(plan.net_credit * 0.5))

@@ -9,7 +9,9 @@ class StrategyFSM:
         self.t = telemetry
 
     def decide(self, regime: RegimeState, position: PositionState) -> StrategyDecision:
-        self.t.emit("strategy_fsm", "decide",
-                    {"regime": regime.regime, "state": position.fsm_state})
+        self.t.emit("strategy_fsm", "decide", {"intent": "OPEN"},
+                    msg=f"ENTRY CRITERIA met (regime {regime.regime} conf "
+                        f"{regime.confidence}, state {position.fsm_state}) "
+                        f"→ decision: OPEN bull put spread")
         return StrategyDecision(intent="OPEN", structure="bull_put_spread",
-                                rationale="canned")
+                                rationale="range-bound → sell put spread with-trend")

@@ -72,11 +72,21 @@ atom/
 - **G3** — `ParameterSet` is the single connect-back contract; the old `ResearchCache`
   term is purged.
 
-## 4. Module stubs
+## 4. Module stubs — walking skeleton
 
-Each stub takes `telemetry` in its constructor, emits one `TraceEvent` per call, and
-returns a canned contract object. Canned-not-behavioural is deliberate (T0.3): e.g.
-`Regime.classify` returns `SIDEWAYS` regardless of input.
+Each stub takes `telemetry` in its constructor, emits a `TraceEvent` per call (with a
+human-readable narration), and returns a contract object carrying **illustrative,
+hard-coded values** — a *walking skeleton*. The values are representative, not computed:
+e.g. NIFTY spot ₹23,412.5, a bull put spread SELL 23400 PE @ ₹123.40 / BUY 23300 PE @
+₹45.60 (hedge), net credit ₹5,835, max loss ₹1,665. This lets a human read the intended
+session flow end-to-end. Canned-not-behavioural is still deliberate (T0.3): e.g.
+`Regime.classify` returns `SIDEWAYS` regardless of input. Real computation arrives at each
+module's REAL phase.
+
+The narrated pass (see `logs/phase0_run.log`):
+`SESSION open → login SUCCESS → data capture/ticks flowing → 7-family read → ENTRY
+criteria met → CONSTRUCT spread → RISK APPROVED → orders FILLED (short + hedge) →
+POSITION open → research-loop preview`.
 
 Each file's docstring states the module's **ownership** per `SEAM_RECONCILIATION.md` (e.g.
 Trade Construction "owns price intent + trade-strike choice"; Order "owns placement

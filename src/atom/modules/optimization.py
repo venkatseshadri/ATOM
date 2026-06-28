@@ -10,6 +10,8 @@ class Optimization:
         self.t = telemetry
 
     def propose(self, findings: dict, history=None) -> ParameterSet:
-        self.t.emit("optimization", "propose", {})
+        self.t.emit("optimization", "propose", {"version": "cand-0"},
+                    msg="OPTIMIZE → candidate ParameterSet cand-0 "
+                        "(objective: drawdown-adjusted PnL + survival)")
         return ParameterSet(version="cand-0", valid_for=now()[:10], params={},
                             evidence_ref="none", approval_state="CANDIDATE")

@@ -7,7 +7,8 @@ class MarketSession:
         self.t = telemetry
 
     def tick(self) -> str:
-        self.t.emit("market_session", "tick", {"phase": "OPEN"})
+        self.t.emit("market_session", "tick", {"phase": "OPEN"},
+                    msg="SESSION → market OPEN, within entry window")
         return "OPEN"
 
     def is_square_off(self) -> bool:

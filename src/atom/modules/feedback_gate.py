@@ -11,6 +11,8 @@ class FeedbackGate:
         self.t = telemetry
 
     def evaluate(self, candidate: ParameterSet, backtest_ok: bool = True) -> ParameterSet:
-        self.t.emit("feedback_gate", "evaluate", {"approved": backtest_ok})
-        return replace(candidate,
-                       approval_state="APPROVED" if backtest_ok else "REJECTED")
+        state = "APPROVED" if backtest_ok else "REJECTED"
+        self.t.emit("feedback_gate", "evaluate", {"approval_state": state},
+                    msg=f"FEEDBACK GATE → backtest {'passed' if backtest_ok else 'failed'}"
+                        f" + awaiting morning human approval → {state}")
+        return replace(candidate, approval_state=state)

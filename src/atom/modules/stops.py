@@ -9,5 +9,7 @@ class StopManagement:
         self.t = telemetry
 
     def manage(self, position: PositionState, snapshot: MarketSnapshot) -> dict:
-        self.t.emit("stop_management", "manage", {"state": position.fsm_state})
+        self.t.emit("stop_management", "manage", {"state": position.fsm_state},
+                    msg=f"STOPS armed → SL set, TSL inactive, TP target "
+                        f"(state {position.fsm_state})")
         return {"sl": 0.0, "tsl": 0.0, "tp": 0.0, "exit": False}
