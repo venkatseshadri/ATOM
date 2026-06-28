@@ -18,6 +18,7 @@ phases (Phase 0 = runnable skeleton, contracts frozen).
 | **[modules/](modules/README.md)** | Per-module behavioral decomposition (the build unit): line items + Given/When/Then tests. |
 | **[phases/](phases/README.md)** | Execution view — 7 phase folders (0–6), each with functional / technical / testcases docs + Board gate. |
 | **[SEAM_RECONCILIATION.md](SEAM_RECONCILIATION.md)** | Authoritative boundary rulings where the isolated module docs overlap or leave gaps. Governs seams. |
+| **[progress/](progress/README.md)** | Progress dashboard, changelog, gate tracker, and full per-phase technical writeups. |
 
 Requirements (PROJECT_DOCUMENT) → functional modules (FUNCTIONAL_DESIGN) → technical
 modules (TECHNICAL_DESIGN) are linked by the RTM in TECHNICAL_DESIGN.md §7.
