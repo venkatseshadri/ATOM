@@ -109,10 +109,15 @@ Check every box, then the Board signs the gate. Unchecked = phase not done.
 
 ## Current status
 
-Design phase. **No code yet** — modules 1–16 exist as *discovery docs*, not implementations.
-Next executable step = **Phase 0**: derive the frozen contracts from the module docs, build
-16 stubs, wire the orchestrator. When the Phase 0 DoD above is all-checked, Board signs
-GATE 0 and Phase 1 begins.
+**Phase 0 skeleton BUILT** (Python, `src/atom/`) — awaiting GATE 0 sign-off.
+- Frozen contracts: `src/atom/contracts.py` (immutable dataclasses, incl. `AccountState`
+  for gap G1, `ParameterSet` canonical for gap G3).
+- 16 module stubs: `src/atom/modules/` (one file per module).
+- Orchestrator: `src/atom/orchestrator.py` — one full pass, 16/16 modules emit a trace.
+- Run it: `python3 run_phase0.py`. Tests: `python3 -m pytest` → **5 passed** (T0.1–T0.3).
 
-Seam reconciliation across module docs (e.g. 4 vs 13 on price) is a **pre-Phase-0** cleanup,
-deferred pending Board review of the module docs.
+Seam reconciliation is **done** ([SEAM_RECONCILIATION.md](SEAM_RECONCILIATION.md)); gaps
+G1–G4 there still need a Board ruling before their REAL phase (G1→P3, G2→P5, G4→P4; G3
+already standardized on `ParameterSet`).
+
+**Next:** Board signs GATE 0 (review contracts + skeleton) → Phase 1 begins.

@@ -1,0 +1,9 @@
+[project]
+name = "atom"
+version = "0.0.0"
+description = "ATOM — Adaptive Theta Options Machine (Phase 0 skeleton)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
