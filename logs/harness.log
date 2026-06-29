@@ -1,0 +1,48 @@
+=== ATOM PORCUPINE harness — Phase 0 ===
+# MOCK/REAL status — Phase 0 (update as phases land):
+#   auth               MOCK
+#   config             MOCK
+#   feedback_gate      MOCK
+#   instrument         MOCK (ATM-from-spot math live; expiry/lot/premium illustrative)
+#   ledger             MOCK
+#   market_data        MOCK
+#   market_session     MOCK
+#   optimization       MOCK
+#   order              MOCK (paper)
+#   post_mortem        MOCK
+#   regime             MOCK
+#   risk               MOCK
+#   stop_management    MOCK
+#   strategy_fsm       MOCK (scripted tape)
+#   structure_builder  MOCK
+#   telemetry          REAL
+----------------------------------------------------------------------
+[PASS] A_morph_to_eod
+        ✓ end state == FLAT
+        ✓ realized sign == +
+        ✓ state path == ('SINGLE_SPREAD', 'IRON_FLY', 'RUNNER', 'FLAT')
+        ✓ invariant: ends FLAT (no overnight)
+[PASS] B_stop_loss
+        ✓ end state == FLAT
+        ✓ realized sign == -
+        ✓ state path == ('SINGLE_SPREAD', 'FLAT')
+        ✓ exit reason == SL
+        ✓ invariant: ends FLAT (no overnight)
+[PASS] C_take_profit
+        ✓ end state == FLAT
+        ✓ realized sign == +
+        ✓ state path == ('SINGLE_SPREAD', 'FLAT')
+        ✓ exit reason == TP
+        ✓ invariant: ends FLAT (no overnight)
+[PASS] D_trailing_stop
+        ✓ end state == FLAT
+        ✓ realized sign == +
+        ✓ state path == ('SINGLE_SPREAD', 'FLAT')
+        ✓ exit reason == TSL
+        ✓ invariant: ends FLAT (no overnight)
+[PASS] E_risk_reject
+        ✓ end state == FLAT
+        ✓ realized sign == 0
+        ✓ invariant: ends FLAT (no overnight)
+----------------------------------------------------------------------
+5/5 scenarios passed

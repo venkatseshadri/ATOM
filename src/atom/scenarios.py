@@ -1,9 +1,9 @@
-"""Scenario tapes for the Phase 0 walking skeleton.
+"""Scenario tapes + expectations for the ATOM PORCUPINE-style harness.
 
 Each scenario is a scripted sequence of cycles (a lookup tape — NOT real strategy) that
-exercises a distinct exit path: morph→EOD, stop-loss, take-profit, trailing-stop, and a
-risk rejection. One scenario → one log, so each path is independently reviewable and the
-same scenarios stay useful as phases turn MOCK → REAL.
+exercises a distinct exit path, paired with an `Expect` block the harness asserts. One
+scenario → one log; the same scenarios stay useful (and the assertions get stricter) as
+phases turn modules MOCK → REAL.
 """
 from __future__ import annotations
 
@@ -22,11 +22,21 @@ class Step:
 
 
 @dataclass(frozen=True)
+class Expect:
+    """What the harness asserts after running the scenario."""
+    end_state: str                     # final FSM state
+    realized_sign: str                 # "+" | "-" | "0"
+    states: tuple = ()                 # expected ledger state progression
+    exit_reason: str | None = None     # SL | TSL | TP (stop-raised exits)
+
+
+@dataclass(frozen=True)
 class Scenario:
     name: str
     title: str
-    expect: str
+    expect: str                        # human-readable description
     steps: list = field(default_factory=list)
+    spec: Expect = None                # machine-checkable expectations
 
 
 SCENARIOS = [
@@ -41,6 +51,8 @@ SCENARIOS = [
             Step("13:30", "REVERSAL", 0.69, "RUNNER"),
             Step("15:25", "EOD", 1.00, "FLAT", realized=4200.0),
         ],
+        spec=Expect(end_state="FLAT", realized_sign="+",
+                    states=("SINGLE_SPREAD", "IRON_FLY", "RUNNER", "FLAT")),
     ),
     Scenario(
         name="B_stop_loss",
@@ -50,6 +62,8 @@ SCENARIOS = [
             Step("09:20", "TREND_UP", 0.71, "SINGLE_SPREAD"),
             Step("10:05", "TREND_DOWN", 0.66, "FLAT", stop_event="SL", realized=-1665.0),
         ],
+        spec=Expect(end_state="FLAT", realized_sign="-",
+                    states=("SINGLE_SPREAD", "FLAT"), exit_reason="SL"),
     ),
     Scenario(
         name="C_take_profit",
@@ -59,6 +73,8 @@ SCENARIOS = [
             Step("09:20", "TREND_UP", 0.71, "SINGLE_SPREAD"),
             Step("12:30", "SIDEWAYS", 0.70, "FLAT", stop_event="TP", realized=2918.0),
         ],
+        spec=Expect(end_state="FLAT", realized_sign="+",
+                    states=("SINGLE_SPREAD", "FLAT"), exit_reason="TP"),
     ),
     Scenario(
         name="D_trailing_stop",
@@ -69,6 +85,8 @@ SCENARIOS = [
             Step("09:20", "TREND_UP", 0.71, "SINGLE_SPREAD"),
             Step("14:10", "SIDEWAYS", 0.61, "FLAT", stop_event="TSL", realized=1460.0),
         ],
+        spec=Expect(end_state="FLAT", realized_sign="+",
+                    states=("SINGLE_SPREAD", "FLAT"), exit_reason="TSL"),
     ),
     Scenario(
         name="E_risk_reject",
@@ -77,5 +95,6 @@ SCENARIOS = [
         steps=[
             Step("09:20", "TREND_UP", 0.71, "FLAT", reject="DRAWDOWN_FLOOR_10PCT"),
         ],
+        spec=Expect(end_state="FLAT", realized_sign="0", states=()),
     ),
 ]
