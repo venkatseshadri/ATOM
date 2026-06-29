@@ -9,7 +9,7 @@ PHASE = 0
 
 MODULE_STATUS = {
     "auth": "MOCK",
-    "instrument": "MOCK",
+    "instrument": "MOCK (ATM-from-spot math live; expiry/lot/premium illustrative)",
     "market_data": "MOCK",
     "regime": "MOCK",
     "strategy_fsm": "MOCK (scripted tape)",

@@ -1,7 +1,7 @@
 # ATOM Phase 0 — pytest log
-# generated: 2026-06-29T06:08:04Z UTC
+# generated: 2026-06-29T17:46:10Z UTC
 # command: python3 -m pytest -v
-# commit: 3db9b7a
+# commit: 8fb7ba2
 ----------------------------------------------------------------------
 ============================= test session starts ==============================
 platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
@@ -24,4 +24,4 @@ tests/test_scenarios.py::test_stop_loss_realizes_loss PASSED             [ 80%]
 tests/test_scenarios.py::test_take_profit_realizes_gain PASSED           [ 90%]
 tests/test_scenarios.py::test_risk_reject_stays_flat_no_pnl PASSED       [100%]
 
-============================== 10 passed in 0.03s ==============================
+============================== 10 passed in 0.04s ==============================

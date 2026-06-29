@@ -101,10 +101,10 @@ class Orchestrator:
         param_set = self._call(self.config, "parameter_set")
         account = self._call(self.config, "account_state")
         session = self._call(self.auth, "login")
-        instrument = self._call(self.instrument, "resolve", index)
 
         self.t.stage("DATA CAPTURE & FLOW")
         snapshot = self._call(self.market_data, "snapshot", index, session)
+        instrument = self._call(self.instrument, "resolve", index, snapshot.spot)
 
         self.t.stage("MONITOR & DECIDE")
         regime = self._call(self.regime, "classify", snapshot)
@@ -144,8 +144,9 @@ class Orchestrator:
         param_set = self._call(self.config, "parameter_set")
         account = self._call(self.config, "account_state")
         session = self._call(self.auth, "login")
-        instrument = self._call(self.instrument, "resolve", index)
         snapshot = self._call(self.market_data, "snapshot", index, session)
+        # instrument resolves ATM from the captured spot
+        instrument = self._call(self.instrument, "resolve", index, snapshot.spot)
 
         position = self.ledger.flat()
         for step in scenario.steps:

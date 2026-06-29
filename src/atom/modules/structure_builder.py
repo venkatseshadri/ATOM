@@ -1,11 +1,14 @@
 """Module 4 — Trade Construction (STUB). Owns price intent + trade-strike choice.
 
-Phase 0 emits leg-shift / morph narration for each lifecycle intent (illustrative,
-hard-coded values — no real strike/greek selection yet).
+Phase 0: strikes are derived from the ATM that Module 12 resolved from spot (short = ATM,
+wing = ATM ± WING). The PREMIUMS and the selection *policy* (which delta/offset) remain
+illustrative — those become real in Phase 2 with greek-driven selection.
 """
 from __future__ import annotations
 
 from ..contracts import Instrument, Leg, MarketSnapshot, StrategyDecision, StructurePlan
+
+WING = 100      # illustrative wing width (strike points)
 
 
 class StructureBuilder:
@@ -24,41 +27,45 @@ class StructureBuilder:
               instrument: Instrument) -> StructurePlan:
         i = decision.intent
         lot = instrument.lot_size
+        atm = int(instrument.strike)          # ATM resolved by Module 12 from spot
         if i == "OPEN":
-            legs = (self._leg(instrument, 23400, "SELL", 123.40),
-                    self._leg(instrument, 23300, "BUY", 45.60))
+            short, hedge = atm, atm - WING
+            legs = (self._leg(instrument, short, "SELL", 123.40),
+                    self._leg(instrument, hedge, "BUY", 45.60))
             credit, max_loss = 77.80 * lot, 22.20 * lot
-            msg = (f"OPEN bull put spread @ NIFTY ₹{snapshot.spot:,.1f} → "
-                   f"SELL 23400 PE @ ₹123.40 | BUY 23300 PE @ ₹45.60 (hedge) → "
+            msg = (f"OPEN bull put spread → short = ATM {short} PE @ ₹123.40 (SELL) | "
+                   f"hedge = ATM−{WING} {hedge} PE @ ₹45.60 (BUY) → "
                    f"credit ₹{credit:,.0f}, max loss ₹{max_loss:,.0f}")
         elif i == "MORPH_ADD":
-            legs = (self._leg(instrument, 23500, "SELL", 108.20, "CE"),
-                    self._leg(instrument, 23600, "BUY", 52.40, "CE"))
+            short, hedge = atm + WING, atm + 2 * WING
+            legs = (self._leg(instrument, short, "SELL", 108.20, "CE"),
+                    self._leg(instrument, hedge, "BUY", 52.40, "CE"))
             credit, max_loss = 55.80 * lot, 44.20 * lot
-            msg = ("LEG SHIFT (morph-add) → + bear call spread: "
-                   "SELL 23500 CE @ ₹108.20 | BUY 23600 CE @ ₹52.40 → "
-                   "structure now IRON_FLY (both sides)")
+            msg = (f"LEG SHIFT (morph-add) → + bear call spread: "
+                   f"short = ATM+{WING} {short} CE @ ₹108.20 (SELL) | "
+                   f"hedge = ATM+{2*WING} {hedge} CE @ ₹52.40 (BUY) → now IRON_FLY")
         elif i == "MORPH_CLOSE_LEG":
-            legs = (self._leg(instrument, 23400, "BUY", 158.00),
-                    self._leg(instrument, 23300, "SELL", 96.00))
+            legs = (self._leg(instrument, atm, "BUY", 158.00),
+                    self._leg(instrument, atm - WING, "SELL", 96.00))
             credit, max_loss = 0.0, 0.0
-            msg = ("LEG SHIFT (morph) → CLOSE bull put spread (threatened): "
-                   "BUY back 23400 PE | SELL 23300 PE → KEEP bear call as RUNNER")
+            msg = (f"LEG SHIFT (morph) → CLOSE bull put spread (threatened): "
+                   f"BUY back {atm} PE | SELL {atm - WING} PE → KEEP bear call as RUNNER")
         elif i == "EXIT":
             if decision.structure == "square_off_put":
-                legs = (self._leg(instrument, 23400, "BUY", 118.00),
-                        self._leg(instrument, 23300, "SELL", 70.00))
-                msg = ("EXIT → square off bull put spread: "
-                       "BUY back 23400 PE | SELL 23300 PE")
+                legs = (self._leg(instrument, atm, "BUY", 118.00),
+                        self._leg(instrument, atm - WING, "SELL", 70.00))
+                msg = (f"EXIT → square off bull put spread: "
+                       f"BUY back {atm} PE | SELL {atm - WING} PE")
             else:
-                legs = (self._leg(instrument, 23500, "BUY", 61.00, "CE"),
-                        self._leg(instrument, 23600, "SELL", 28.00, "CE"))
-                msg = ("EXIT → square off RUNNER (bear call): "
-                       "BUY back 23500 CE | SELL 23600 CE")
+                legs = (self._leg(instrument, atm + WING, "BUY", 61.00, "CE"),
+                        self._leg(instrument, atm + 2 * WING, "SELL", 28.00, "CE"))
+                msg = (f"EXIT → square off RUNNER (bear call): "
+                       f"BUY back {atm + WING} CE | SELL {atm + 2 * WING} CE")
             credit, max_loss = 0.0, 0.0
         else:
             legs, credit, max_loss = (), 0.0, 0.0
             msg = "HOLD — no structure change"
         self.t.emit("structure_builder", "build",
-                    {"intent": i, "net_credit": credit, "max_loss": max_loss}, msg=msg)
+                    {"intent": i, "atm": atm, "net_credit": credit, "max_loss": max_loss},
+                    msg=msg)
         return StructurePlan(legs=legs, net_credit=credit, max_loss=max_loss)

@@ -6,7 +6,7 @@
 #   auth               MOCK
 #   config             MOCK
 #   feedback_gate      MOCK
-#   instrument         MOCK
+#   instrument         MOCK (ATM-from-spot math live; expiry/lot/premium illustrative)
 #   ledger             MOCK
 #   market_data        MOCK
 #   market_session     MOCK
@@ -46,9 +46,6 @@
   [auth            ] AUTH attempted → broker gateway (paper)
   [auth            ] dummy broker login SUCCESS → session authenticated (paper)
   ← EXIT  Auth.login                     → returns Session
-  → ENTER InstrumentMaster.resolve       [src/atom/modules/instrument.py:14]  « stub — no business logic yet »
-  [instrument      ] INSTRUMENT master → NIFTY weekly expiry 03JUL26, lot 75, tick 0.05
-  ← EXIT  InstrumentMaster.resolve       → returns Instrument
   → ENTER MarketData.snapshot            [src/atom/modules/market_data.py:21]  « stub — no business logic yet »
   [market_data     ] DATA CAPTURE started → feed connected (paper) → subscribing NIFTY chain
   [market_data     ] tick 1/3 flowing → NIFTY spot ₹23,408.0
@@ -56,6 +53,9 @@
   [market_data     ] tick 3/3 flowing → NIFTY spot ₹23,412.5
   [market_data     ] snapshot assembled → spot ₹23,412.5, 2 strikes, IV~12.5%
   ← EXIT  MarketData.snapshot            → returns MarketSnapshot
+  → ENTER InstrumentMaster.resolve       [src/atom/modules/instrument.py:19]  « stub — no business logic yet »
+  [instrument      ] INSTRUMENT → NIFTY weekly 03JUL26, lot 75, step 50 → ATM = round(spot ₹23,412.5 / 50) × 50 = 23400 | ladder 23300..23500 step 50
+  ← EXIT  InstrumentMaster.resolve       → returns Instrument
 
 >>> 09:20 [cron atom-cycle] intraday cycle (state FLAT)
   → ENTER MarketSession.tick             [src/atom/modules/market_session.py:32]  « stub — no business logic yet »
@@ -67,16 +67,16 @@
   → ENTER StrategyFSM.decide             [src/atom/modules/strategy_fsm.py:24]  « stub — no business logic yet »
   [strategy_fsm    ] FSM [state=FLAT + regime=TREND_UP] → OPEN (bull_put_spread)
   ← EXIT  StrategyFSM.decide             → returns StrategyDecision
-  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:23]  « stub — no business logic yet »
-  [structure_builder] OPEN bull put spread @ NIFTY ₹23,412.5 → SELL 23400 PE @ ₹123.40 | BUY 23300 PE @ ₹45.60 (hedge) → credit ₹5,835, max loss ₹1,665
+  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:26]  « stub — no business logic yet »
+  [structure_builder] OPEN bull put spread → short = ATM 23400 PE @ ₹123.40 (SELL) | hedge = ATM−100 23300 PE @ ₹45.60 (BUY) → credit ₹5,835, max loss ₹1,665
   ← EXIT  StructureBuilder.build         → returns StructurePlan
   → ENTER Risk.gate                      [src/atom/modules/risk.py:11]  « stub — no business logic yet »
   [risk            ] RISK gate → deploy ₹200,000, size 1 lot (75), max loss ₹1,665 ≤ cap → APPROVED
   ← EXIT  Risk.gate                      → returns RiskVerdict
   → ENTER Order.execute                  [src/atom/modules/order.py:12]  « stub — no business logic yet »
   [order           ] ORDER placement → 2 leg(s)
-  [order           ]   SELL 23400PE x75 @ ₹123.4 → FILLED (id O1001)
-  [order           ]   BUY 23300PE x75 @ ₹45.6 → FILLED (id O1002)
+  [order           ]   SELL NIFTY03JUL2623400PE x75 @ ₹123.4 → FILLED (id O1001)
+  [order           ]   BUY NIFTY03JUL2623300PE x75 @ ₹45.6 → FILLED (id O1002)
   ← EXIT  Order.execute                  → returns list
   → ENTER Ledger.apply                   [src/atom/modules/ledger.py:11]  « stub — no business logic yet »
   [ledger          ] LEDGER → state → SINGLE_SPREAD, 2 leg(s)
@@ -96,7 +96,7 @@
   [stop_management ] SL BREACH → short leg tested, MTM −₹1,665 → raise EXIT (stop-loss)
   ← EXIT  StopManagement.manage          → returns dict
   [strategy_fsm    ] FSM ← stop trigger SL → EXIT (square_off)
-  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:23]  « stub — no business logic yet »
+  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:26]  « stub — no business logic yet »
   [structure_builder] EXIT → square off bull put spread: BUY back 23400 PE | SELL 23300 PE
   ← EXIT  StructureBuilder.build         → returns StructurePlan
   → ENTER Risk.gate                      [src/atom/modules/risk.py:11]  « stub — no business logic yet »
@@ -104,8 +104,8 @@
   ← EXIT  Risk.gate                      → returns RiskVerdict
   → ENTER Order.execute                  [src/atom/modules/order.py:12]  « stub — no business logic yet »
   [order           ] ORDER placement → 2 leg(s)
-  [order           ]   BUY 23400PE x75 @ ₹118.0 → FILLED (id O1001)
-  [order           ]   SELL 23300PE x75 @ ₹70.0 → FILLED (id O1002)
+  [order           ]   BUY NIFTY03JUL2623400PE x75 @ ₹118.0 → FILLED (id O1001)
+  [order           ]   SELL NIFTY03JUL2623300PE x75 @ ₹70.0 → FILLED (id O1002)
   ← EXIT  Order.execute                  → returns list
   → ENTER Ledger.apply                   [src/atom/modules/ledger.py:11]  « stub — no business logic yet »
   [ledger          ] LEDGER → state → FLAT, 2 leg(s), realized P&L ₹-1,665

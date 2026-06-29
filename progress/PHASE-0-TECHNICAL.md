@@ -83,6 +83,14 @@ session flow end-to-end. Canned-not-behavioural is still deliberate (T0.3): e.g.
 `Regime.classify` returns `SIDEWAYS` regardless of input. Real computation arrives at each
 module's REAL phase.
 
+**ATM derivation is the one piece of real math:** Module 12 computes
+`ATM = round(spot / step) × step` from the captured spot (e.g. 23,412.5 → 23,400), and
+Module 4 picks short = ATM, hedge = ATM ± wing, snapping to the ladder. The order then
+places the concrete tradingsymbol (`SELL NIFTY03JUL2623400PE`). The **premiums** and the
+selection *policy* (which delta/offset) are still illustrative — they become real in
+Phase 2. So "how does it know the ATM" is answered in-log; "what premium / which delta"
+is still mock.
+
 The narrated pass (see `logs/phase0_run.log`):
 `SESSION open → login SUCCESS → data capture/ticks flowing → 7-family read → ENTRY
 criteria met → CONSTRUCT spread → RISK APPROVED → orders FILLED (short + hedge) →
