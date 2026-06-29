@@ -1,41 +1,58 @@
-"""Module 4 — Trade Construction (STUB). Owns price intent + trade-strike choice."""
+"""Module 4 — Trade Construction (STUB). Owns price intent + trade-strike choice.
+
+Phase 0 emits leg-shift / morph narration for each lifecycle intent (illustrative,
+hard-coded values — no real strike/greek selection yet).
+"""
 from __future__ import annotations
 
 from ..contracts import Instrument, Leg, MarketSnapshot, StrategyDecision, StructurePlan
-
-# illustrative bull put spread around the 23400 ATM (hard-coded for Phase 0)
-SHORT_STRIKE = 23400
-HEDGE_STRIKE = 23300
-SHORT_PREMIUM = 123.40      # sell the nearer PE (higher premium)
-HEDGE_PREMIUM = 45.60       # buy the farther PE (cheaper) as the hedge
 
 
 class StructureBuilder:
     def __init__(self, telemetry) -> None:
         self.t = telemetry
 
-    def _leg(self, base: Instrument, strike: int, action: str, price: float) -> Leg:
-        inst = Instrument(tradingsymbol=f"{base.index}{base.expiry}{strike}PE",
+    def _leg(self, base: Instrument, strike: int, action: str, price: float,
+             right: str = "PE") -> Leg:
+        inst = Instrument(tradingsymbol=f"{base.index}{base.expiry}{strike}{right}",
                           index=base.index, expiry=base.expiry, strike=float(strike),
-                          right="PE", lot_size=base.lot_size, tick_size=base.tick_size)
+                          right=right, lot_size=base.lot_size, tick_size=base.tick_size)
         return Leg(instrument=inst, action=action, qty=base.lot_size,
                    price=price, order_type="LIMIT")
 
     def build(self, decision: StrategyDecision, snapshot: MarketSnapshot,
               instrument: Instrument) -> StructurePlan:
-        legs = (
-            self._leg(instrument, SHORT_STRIKE, "SELL", SHORT_PREMIUM),
-            self._leg(instrument, HEDGE_STRIKE, "BUY", HEDGE_PREMIUM),
-        )
+        i = decision.intent
         lot = instrument.lot_size
-        width = SHORT_STRIKE - HEDGE_STRIKE
-        credit_per_share = SHORT_PREMIUM - HEDGE_PREMIUM
-        net_credit = credit_per_share * lot
-        max_loss = (width - credit_per_share) * lot
+        if i == "OPEN":
+            legs = (self._leg(instrument, 23400, "SELL", 123.40),
+                    self._leg(instrument, 23300, "BUY", 45.60))
+            credit, max_loss = 77.80 * lot, 22.20 * lot
+            msg = (f"OPEN bull put spread @ NIFTY ₹{snapshot.spot:,.1f} → "
+                   f"SELL 23400 PE @ ₹123.40 | BUY 23300 PE @ ₹45.60 (hedge) → "
+                   f"credit ₹{credit:,.0f}, max loss ₹{max_loss:,.0f}")
+        elif i == "MORPH_ADD":
+            legs = (self._leg(instrument, 23500, "SELL", 108.20, "CE"),
+                    self._leg(instrument, 23600, "BUY", 52.40, "CE"))
+            credit, max_loss = 55.80 * lot, 44.20 * lot
+            msg = ("LEG SHIFT (morph-add) → + bear call spread: "
+                   "SELL 23500 CE @ ₹108.20 | BUY 23600 CE @ ₹52.40 → "
+                   "structure now IRON_FLY (both sides)")
+        elif i == "MORPH_CLOSE_LEG":
+            legs = (self._leg(instrument, 23400, "BUY", 158.00),
+                    self._leg(instrument, 23300, "SELL", 96.00))
+            credit, max_loss = 0.0, 0.0
+            msg = ("LEG SHIFT (morph) → CLOSE bull put spread (threatened): "
+                   "BUY back 23400 PE | SELL 23300 PE → KEEP bear call as RUNNER")
+        elif i == "EXIT":
+            legs = (self._leg(instrument, 23500, "BUY", 61.00, "CE"),
+                    self._leg(instrument, 23600, "SELL", 28.00, "CE"))
+            credit, max_loss = 0.0, 0.0
+            msg = ("EXIT → square off RUNNER (bear call): "
+                   "BUY back 23500 CE | SELL 23600 CE")
+        else:
+            legs, credit, max_loss = (), 0.0, 0.0
+            msg = "HOLD — no structure change"
         self.t.emit("structure_builder", "build",
-                    {"net_credit": net_credit, "max_loss": max_loss},
-                    msg=f"CONSTRUCT bull put spread @ NIFTY ₹{snapshot.spot:,.1f} → "
-                        f"SELL {SHORT_STRIKE} PE @ ₹{SHORT_PREMIUM} | "
-                        f"BUY {HEDGE_STRIKE} PE @ ₹{HEDGE_PREMIUM} (hedge) → "
-                        f"net credit ₹{net_credit:,.0f}, max loss ₹{max_loss:,.0f}")
-        return StructurePlan(legs=legs, net_credit=net_credit, max_loss=max_loss)
+                    {"intent": i, "net_credit": credit, "max_loss": max_loss}, msg=msg)
+        return StructurePlan(legs=legs, net_credit=credit, max_loss=max_loss)

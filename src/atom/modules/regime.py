@@ -13,10 +13,13 @@ class Regime:
     def __init__(self, telemetry) -> None:
         self.t = telemetry
 
-    def classify(self, snapshot: MarketSnapshot) -> RegimeState:
-        # Canned: same label regardless of input (proves wiring, not behaviour).
-        self.t.emit("regime", "classify", {"regime": "SIDEWAYS", "confidence": 0.62},
+    def classify(self, snapshot: MarketSnapshot, scripted: str | None = None,
+                 confidence: float = 0.62) -> RegimeState:
+        # Default canned label (same regardless of input — proves wiring, T0.3).
+        # `scripted` is used only by the session-demo to walk the lifecycle tape.
+        label = scripted or "SIDEWAYS"
+        self.t.emit("regime", "classify", {"regime": label, "confidence": confidence},
                     msg=f"MONITORING → 7-family read {FAMILIES} "
-                        f"→ regime=SIDEWAYS (conf 0.62)")
+                        f"→ regime={label} (conf {confidence})")
         return RegimeState(index=snapshot.index, ts=now(),
-                           regime="SIDEWAYS", confidence=0.62)
+                           regime=label, confidence=confidence)

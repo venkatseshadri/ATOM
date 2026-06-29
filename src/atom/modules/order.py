@@ -12,13 +12,12 @@ class Order:
     def execute(self, plan: StructurePlan, verdict: RiskVerdict,
                 session: Session) -> list[Fill]:
         self.t.emit("order", "execute", {"legs": len(plan.legs)},
-                    msg="ORDER placement →")
+                    msg=f"ORDER placement → {len(plan.legs)} leg(s)")
         fills: list[Fill] = []
         for i, leg in enumerate(plan.legs):
             fill = Fill(order_id=f"O{1001 + i}", leg_symbol=leg.instrument.tradingsymbol,
                         fill_price=leg.price, qty=leg.qty, status="FILLED", ts=now())
-            self.t.emit("order", "fill",
-                        {"id": fill.order_id, "price": leg.price},
+            self.t.emit("order", "fill", {"id": fill.order_id, "price": leg.price},
                         msg=f"  {leg.action} {leg.instrument.strike:.0f}"
                             f"{leg.instrument.right} x{leg.qty} @ ₹{leg.price} "
                             f"→ FILLED (id {fill.order_id})")

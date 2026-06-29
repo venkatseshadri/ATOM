@@ -1,9 +1,9 @@
-# ATOM Phase 0 — run log
-# generated: 2026-06-28T15:03:05Z UTC
+# ATOM Phase 0 — run log (full-day session)
+# generated: 2026-06-29T06:00:53Z UTC
 # command: python3 run_phase0.py
 # python: Python 3.12.3
-# commit: 0dc88ec
-# note: walking skeleton — ENTER/EXIT per module method (file:line); meat unimplemented; values illustrative
+# commit: e7907f0
+# note: walking skeleton — scripted lifecycle tape (open->iron-fly->runner->exit), mock cron, EOD AI research; meat unimplemented; values illustrative
 ----------------------------------------------------------------------
 === ATOM Phase 0 — walking skeleton: one session flow (dummy data) ===
 
@@ -30,13 +30,22 @@
   src/atom/telemetry.py
   src/atom/util.py
 
-=== traced session pass (ENTER/EXIT per module method) ===
+=== traced FULL-DAY session (ENTER/EXIT per module method) ===
   [telemetry       ] TELEMETRY → audit trail open
 
->>> CONNECT & SESSION
-  → ENTER MarketSession.tick             [src/atom/modules/market_session.py:9]  « stub — no business logic yet »
-  [market_session  ] SESSION → market OPEN, within entry window
-  ← EXIT  MarketSession.tick             → returns str
+>>> MOCK CRON SCHEDULE
+  → ENTER MarketSession.schedule         [src/atom/modules/market_session.py:24]  « stub — no business logic yet »
+  [market_session  ] MOCK CRON schedule (illustrative):
+  [market_session  ]     09:14              atom-capture.timer     → feed warmup / connect
+  [market_session  ]     09:15              atom-session.timer     → entry window opens
+  [market_session  ]     */1m 09:20–15:20   atom-cycle.timer       → intraday decision cycle
+  [market_session  ]     15:20              atom-lockout.timer     → no new entries
+  [market_session  ]     15:30              atom-squareoff.timer   → force EOD square-off
+  [market_session  ]     15:45              atom-research.timer    → EOD AI research loop (offline)
+  [market_session  ]     08:45+1            atom-approval.timer    → morning human approval gate
+  ← EXIT  MarketSession.schedule         → returns list
+
+>>> 09:14 [cron atom-capture] PRE-OPEN — connect & warmup
   → ENTER Config.parameter_set           [src/atom/config.py:17]  « stub — no business logic yet »
   [config          ] CONFIG → loaded day's frozen ParameterSet (version phase0-canned)
   ← EXIT  Config.parameter_set           → returns ParameterSet
@@ -50,8 +59,6 @@
   → ENTER InstrumentMaster.resolve       [src/atom/modules/instrument.py:14]  « stub — no business logic yet »
   [instrument      ] INSTRUMENT master → NIFTY weekly expiry 03JUL26, lot 75, tick 0.05
   ← EXIT  InstrumentMaster.resolve       → returns Instrument
-
->>> DATA CAPTURE & FLOW
   → ENTER MarketData.snapshot            [src/atom/modules/market_data.py:21]  « stub — no business logic yet »
   [market_data     ] DATA CAPTURE started → feed connected (paper) → subscribing NIFTY chain
   [market_data     ] tick 1/3 flowing → NIFTY spot ₹23,408.0
@@ -60,57 +67,133 @@
   [market_data     ] snapshot assembled → spot ₹23,412.5, 2 strikes, IV~12.5%
   ← EXIT  MarketData.snapshot            → returns MarketSnapshot
 
->>> MONITOR & DECIDE
+>>> 09:20 [cron atom-cycle] intraday cycle (state FLAT)
+  → ENTER MarketSession.tick             [src/atom/modules/market_session.py:32]  « stub — no business logic yet »
+  [market_session  ] SESSION → 09:20 market OPEN, within entry window
+  ← EXIT  MarketSession.tick             → returns str
   → ENTER Regime.classify                [src/atom/modules/regime.py:16]  « stub — no business logic yet »
-  [regime          ] MONITORING → 7-family read {'SuperTrend': 'bull', 'ADX': 22, 'RSI': 54, 'ATR%': 0.4, 'Volume': 'avg', 'Structure': 'range', 'PCR': 0.98} → regime=SIDEWAYS (conf 0.62)
+  [regime          ] MONITORING → 7-family read {'SuperTrend': 'bull', 'ADX': 22, 'RSI': 54, 'ATR%': 0.4, 'Volume': 'avg', 'Structure': 'range', 'PCR': 0.98} → regime=TREND_UP (conf 0.71)
   ← EXIT  Regime.classify                → returns RegimeState
-  → ENTER StrategyFSM.decide             [src/atom/modules/strategy_fsm.py:11]  « stub — no business logic yet »
-  [strategy_fsm    ] ENTRY CRITERIA met (regime SIDEWAYS conf 0.62, state FLAT) → decision: OPEN bull put spread
+  → ENTER StrategyFSM.decide             [src/atom/modules/strategy_fsm.py:24]  « stub — no business logic yet »
+  [strategy_fsm    ] FSM [state=FLAT + regime=TREND_UP] → OPEN (bull_put_spread)
   ← EXIT  StrategyFSM.decide             → returns StrategyDecision
-
->>> CONSTRUCT & RISK
-  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:24]  « stub — no business logic yet »
-  [structure_builder] CONSTRUCT bull put spread @ NIFTY ₹23,412.5 → SELL 23400 PE @ ₹123.4 | BUY 23300 PE @ ₹45.6 (hedge) → net credit ₹5,835, max loss ₹1,665
+  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:23]  « stub — no business logic yet »
+  [structure_builder] OPEN bull put spread @ NIFTY ₹23,412.5 → SELL 23400 PE @ ₹123.40 | BUY 23300 PE @ ₹45.60 (hedge) → credit ₹5,835, max loss ₹1,665
   ← EXIT  StructureBuilder.build         → returns StructurePlan
   → ENTER Risk.gate                      [src/atom/modules/risk.py:11]  « stub — no business logic yet »
   [risk            ] RISK gate → deploy ₹200,000, size 1 lot (75), max loss ₹1,665 ≤ cap → APPROVED
   ← EXIT  Risk.gate                      → returns RiskVerdict
-
->>> EXECUTE
   → ENTER Order.execute                  [src/atom/modules/order.py:12]  « stub — no business logic yet »
-  [order           ] ORDER placement →
+  [order           ] ORDER placement → 2 leg(s)
   [order           ]   SELL 23400PE x75 @ ₹123.4 → FILLED (id O1001)
   [order           ]   BUY 23300PE x75 @ ₹45.6 → FILLED (id O1002)
   ← EXIT  Order.execute                  → returns list
   → ENTER Ledger.apply                   [src/atom/modules/ledger.py:11]  « stub — no business logic yet »
-  [ledger          ] POSITION open → SINGLE_SPREAD, 2 legs filled, live P&L ₹0
+  [ledger          ] LEDGER → state → SINGLE_SPREAD, 2 leg(s)
   ← EXIT  Ledger.apply                   → returns PositionState
   → ENTER StopManagement.manage          [src/atom/modules/stop_management.py:11]  « stub — no business logic yet »
   [stop_management ] STOPS armed → SL set, TSL inactive, TP target (state SINGLE_SPREAD)
   ← EXIT  StopManagement.manage          → returns dict
 
->>> RESEARCH LOOP (offline preview)
+>>> 11:30 [cron atom-cycle] intraday cycle (state SINGLE_SPREAD)
+  → ENTER MarketSession.tick             [src/atom/modules/market_session.py:32]  « stub — no business logic yet »
+  [market_session  ] SESSION → 11:30 market OPEN, within entry window
+  ← EXIT  MarketSession.tick             → returns str
+  → ENTER Regime.classify                [src/atom/modules/regime.py:16]  « stub — no business logic yet »
+  [regime          ] MONITORING → 7-family read {'SuperTrend': 'bull', 'ADX': 22, 'RSI': 54, 'ATR%': 0.4, 'Volume': 'avg', 'Structure': 'range', 'PCR': 0.98} → regime=SIDEWAYS (conf 0.64)
+  ← EXIT  Regime.classify                → returns RegimeState
+  → ENTER StrategyFSM.decide             [src/atom/modules/strategy_fsm.py:24]  « stub — no business logic yet »
+  [strategy_fsm    ] FSM [state=SINGLE_SPREAD + regime=SIDEWAYS] → MORPH_ADD (add_bear_call_spread)
+  ← EXIT  StrategyFSM.decide             → returns StrategyDecision
+  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:23]  « stub — no business logic yet »
+  [structure_builder] LEG SHIFT (morph-add) → + bear call spread: SELL 23500 CE @ ₹108.20 | BUY 23600 CE @ ₹52.40 → structure now IRON_FLY (both sides)
+  ← EXIT  StructureBuilder.build         → returns StructurePlan
+  → ENTER Risk.gate                      [src/atom/modules/risk.py:11]  « stub — no business logic yet »
+  [risk            ] RISK gate → deploy ₹200,000, size 1 lot (75), max loss ₹3,315 ≤ cap → APPROVED
+  ← EXIT  Risk.gate                      → returns RiskVerdict
+  → ENTER Order.execute                  [src/atom/modules/order.py:12]  « stub — no business logic yet »
+  [order           ] ORDER placement → 2 leg(s)
+  [order           ]   SELL 23500CE x75 @ ₹108.2 → FILLED (id O1001)
+  [order           ]   BUY 23600CE x75 @ ₹52.4 → FILLED (id O1002)
+  ← EXIT  Order.execute                  → returns list
+  → ENTER Ledger.apply                   [src/atom/modules/ledger.py:11]  « stub — no business logic yet »
+  [ledger          ] LEDGER → state → IRON_FLY, 2 leg(s)
+  ← EXIT  Ledger.apply                   → returns PositionState
+  → ENTER StopManagement.manage          [src/atom/modules/stop_management.py:11]  « stub — no business logic yet »
+  [stop_management ] STOPS armed → SL set, TSL inactive, TP target (state IRON_FLY)
+  ← EXIT  StopManagement.manage          → returns dict
+
+>>> 13:30 [cron atom-cycle] intraday cycle (state IRON_FLY)
+  → ENTER MarketSession.tick             [src/atom/modules/market_session.py:32]  « stub — no business logic yet »
+  [market_session  ] SESSION → 13:30 market OPEN, within entry window
+  ← EXIT  MarketSession.tick             → returns str
+  → ENTER Regime.classify                [src/atom/modules/regime.py:16]  « stub — no business logic yet »
+  [regime          ] MONITORING → 7-family read {'SuperTrend': 'bull', 'ADX': 22, 'RSI': 54, 'ATR%': 0.4, 'Volume': 'avg', 'Structure': 'range', 'PCR': 0.98} → regime=REVERSAL (conf 0.69)
+  ← EXIT  Regime.classify                → returns RegimeState
+  → ENTER StrategyFSM.decide             [src/atom/modules/strategy_fsm.py:24]  « stub — no business logic yet »
+  [strategy_fsm    ] FSM [state=IRON_FLY + regime=REVERSAL] → MORPH_CLOSE_LEG (close_put_keep_runner)
+  ← EXIT  StrategyFSM.decide             → returns StrategyDecision
+  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:23]  « stub — no business logic yet »
+  [structure_builder] LEG SHIFT (morph) → CLOSE bull put spread (threatened): BUY back 23400 PE | SELL 23300 PE → KEEP bear call as RUNNER
+  ← EXIT  StructureBuilder.build         → returns StructurePlan
+  → ENTER Risk.gate                      [src/atom/modules/risk.py:11]  « stub — no business logic yet »
+  [risk            ] RISK gate → deploy ₹200,000, size 1 lot (75), max loss ₹0 ≤ cap → APPROVED
+  ← EXIT  Risk.gate                      → returns RiskVerdict
+  → ENTER Order.execute                  [src/atom/modules/order.py:12]  « stub — no business logic yet »
+  [order           ] ORDER placement → 2 leg(s)
+  [order           ]   BUY 23400PE x75 @ ₹158.0 → FILLED (id O1001)
+  [order           ]   SELL 23300PE x75 @ ₹96.0 → FILLED (id O1002)
+  ← EXIT  Order.execute                  → returns list
+  → ENTER Ledger.apply                   [src/atom/modules/ledger.py:11]  « stub — no business logic yet »
+  [ledger          ] LEDGER → state → RUNNER, 2 leg(s)
+  ← EXIT  Ledger.apply                   → returns PositionState
+  → ENTER StopManagement.manage          [src/atom/modules/stop_management.py:11]  « stub — no business logic yet »
+  [stop_management ] STOPS armed → SL set, TSL inactive, TP target (state RUNNER)
+  ← EXIT  StopManagement.manage          → returns dict
+
+>>> 15:25 [cron atom-cycle] intraday cycle (state RUNNER)
+  → ENTER MarketSession.tick             [src/atom/modules/market_session.py:32]  « stub — no business logic yet »
+  [market_session  ] SESSION → 15:25 market OPEN, within entry window
+  ← EXIT  MarketSession.tick             → returns str
+  → ENTER Regime.classify                [src/atom/modules/regime.py:16]  « stub — no business logic yet »
+  [regime          ] MONITORING → 7-family read {'SuperTrend': 'bull', 'ADX': 22, 'RSI': 54, 'ATR%': 0.4, 'Volume': 'avg', 'Structure': 'range', 'PCR': 0.98} → regime=EOD (conf 1.0)
+  ← EXIT  Regime.classify                → returns RegimeState
+  → ENTER StrategyFSM.decide             [src/atom/modules/strategy_fsm.py:24]  « stub — no business logic yet »
+  [strategy_fsm    ] FSM [state=RUNNER + regime=EOD] → EXIT (square_off)
+  ← EXIT  StrategyFSM.decide             → returns StrategyDecision
+  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:23]  « stub — no business logic yet »
+  [structure_builder] EXIT → square off RUNNER (bear call): BUY back 23500 CE | SELL 23600 CE
+  ← EXIT  StructureBuilder.build         → returns StructurePlan
+  → ENTER Risk.gate                      [src/atom/modules/risk.py:11]  « stub — no business logic yet »
+  [risk            ] RISK gate → deploy ₹200,000, size 1 lot (75), max loss ₹0 ≤ cap → APPROVED
+  ← EXIT  Risk.gate                      → returns RiskVerdict
+  → ENTER Order.execute                  [src/atom/modules/order.py:12]  « stub — no business logic yet »
+  [order           ] ORDER placement → 2 leg(s)
+  [order           ]   BUY 23500CE x75 @ ₹61.0 → FILLED (id O1001)
+  [order           ]   SELL 23600CE x75 @ ₹28.0 → FILLED (id O1002)
+  ← EXIT  Order.execute                  → returns list
+  → ENTER Ledger.apply                   [src/atom/modules/ledger.py:11]  « stub — no business logic yet »
+  [ledger          ] LEDGER → state → FLAT, 2 leg(s), realized P&L ₹+4,200
+  ← EXIT  Ledger.apply                   → returns PositionState
+  → ENTER StopManagement.manage          [src/atom/modules/stop_management.py:11]  « stub — no business logic yet »
+  [stop_management ] STOPS armed → SL set, TSL inactive, TP target (state FLAT)
+  ← EXIT  StopManagement.manage          → returns dict
+
+>>> 15:30 [cron atom-squareoff] EOD — book flat, no overnight risk
+
+>>> 15:45 [cron atom-research] EOD RESEARCH LOOP (AI, offline)
   → ENTER PostMortem.analyze             [src/atom/modules/post_mortem.py:9]  « stub — no business logic yet »
-  [post_mortem     ] POST-MORTEM → scoring 0 trades / 48 trace events (per-trade/session/regime)
+  [post_mortem     ] AI POST-MORTEM → 1 trade(s) scored (WIN, exit=EOD), regime calls 3/4 correct, slippage ₹120 | per-trade/session/regime over 136 events
   ← EXIT  PostMortem.analyze             → returns dict
   → ENTER Optimization.propose           [src/atom/modules/optimization.py:12]  « stub — no business logic yet »
-  [optimization    ] OPTIMIZE → candidate ParameterSet cand-0 (objective: drawdown-adjusted PnL + survival)
+  [optimization    ] AI OPTIMIZER (LLM) → candidate cand-1: ADX entry 22→24, short Δ 0.45→0.40 | objective: drawdown-adjusted PnL ↑, survival OK
   ← EXIT  Optimization.propose           → returns ParameterSet
   → ENTER FeedbackGate.evaluate          [src/atom/modules/feedback_gate.py:13]  « stub — no business logic yet »
-  [feedback_gate   ] FEEDBACK GATE → backtest passed + awaiting morning human approval → APPROVED
+  [feedback_gate   ] FEEDBACK GATE → PORCUPINE backtest 60d PASS, promotion 1/2 days → APPROVED (pending 08:45 morning human approval)
   ← EXIT  FeedbackGate.evaluate          → returns ParameterSet
 
-=== contract objects produced (pipeline order) ===
-  session        -> Session
-  instrument     -> Instrument
-  snapshot       -> MarketSnapshot
-  regime         -> RegimeState
-  decision       -> StrategyDecision
-  plan           -> StructurePlan
-  account        -> AccountState
-  verdict        -> RiskVerdict
-  fills          -> list
-  position       -> PositionState
-  parameter_set  -> ParameterSet
+>>> 08:45+1 [cron atom-approval] MORNING GATE
+  [config          ] CONFIG → ParameterSet cand-1 staged for next session (awaiting human approval)
 
+=== end of day → position FLAT, realized P&L ₹+4,200 ===
 modules that emitted a trace: 16/16

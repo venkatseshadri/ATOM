@@ -20,15 +20,13 @@ def main() -> None:
     for f in sorted(glob.glob("src/atom/**/*.py", recursive=True)):
         print(f"  {f}")
 
-    print("\n=== traced session pass (ENTER/EXIT per module method) ===")
+    print("\n=== traced FULL-DAY session (ENTER/EXIT per module method) ===")
     orch = Orchestrator()
-    result = orch.run_cycle("NIFTY")
+    final = orch.run_session("NIFTY")
 
-    print("\n=== contract objects produced (pipeline order) ===")
-    for name in ("session", "instrument", "snapshot", "regime", "decision",
-                 "plan", "account", "verdict", "fills", "position", "parameter_set"):
-        print(f"  {name:<14} -> {type(getattr(result, name)).__name__}")
-    print(f"\nmodules that emitted a trace: {len(orch.t.sources())}/16")
+    print(f"\n=== end of day → position {final.fsm_state}, "
+          f"realized P&L ₹{final.realized_pnl:+,.0f} ===")
+    print(f"modules that emitted a trace: {len(orch.t.sources())}/16")
 
 
 if __name__ == "__main__":

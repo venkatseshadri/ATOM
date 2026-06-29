@@ -13,6 +13,7 @@ class FeedbackGate:
     def evaluate(self, candidate: ParameterSet, backtest_ok: bool = True) -> ParameterSet:
         state = "APPROVED" if backtest_ok else "REJECTED"
         self.t.emit("feedback_gate", "evaluate", {"approval_state": state},
-                    msg=f"FEEDBACK GATE → backtest {'passed' if backtest_ok else 'failed'}"
-                        f" + awaiting morning human approval → {state}")
+                    msg=f"FEEDBACK GATE → PORCUPINE backtest 60d "
+                        f"{'PASS' if backtest_ok else 'FAIL'}, promotion 1/2 days → "
+                        f"{state} (pending 08:45 morning human approval)")
         return replace(candidate, approval_state=state)

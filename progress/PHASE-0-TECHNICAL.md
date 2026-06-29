@@ -92,9 +92,23 @@ Each file's docstring states the module's **ownership** per `SEAM_RECONCILIATION
 Trade Construction "owns price intent + trade-strike choice"; Order "owns placement
 mechanics"). This pre-wires the boundaries for the REAL phases.
 
-## 5. Orchestrator — one pass
+## 5. Orchestrator — two entry points
 
-`Orchestrator.run_cycle(index)` executes, in order:
+### `run_session(index)` — full-day walking skeleton (what `run_phase0.py` runs)
+Drives a scripted lifecycle **tape** (`SESSION_TAPE`, a lookup — not real strategy) so
+the log shows the whole day:
+1. **Mock cron schedule** printed (capture/session/cycle/lockout/squareoff/research/approval timers).
+2. **09:14 pre-open** — auth, instrument, data capture warmup.
+3. **Intraday cycles** walking the morph lifecycle, each a full module pass:
+   `09:20 TREND_UP → OPEN bull put spread (SINGLE_SPREAD)` →
+   `11:30 SIDEWAYS → MORPH_ADD bear call spread (IRON_FLY)` →
+   `13:30 REVERSAL → MORPH_CLOSE_LEG, keep runner (RUNNER)` →
+   `15:25 EOD → EXIT square-off (FLAT, realized ₹+4,200)`. Leg-shift/morph lines emitted by Builder + Order.
+4. **15:30 cron square-off**, **15:45 cron EOD AI research loop**
+   (AI post-mortem → AI/LLM optimizer → feedback gate + PORCUPINE backtest), **08:45+1 morning approval gate**.
+
+### `run_cycle(index)` — single pass (used by the acceptance tests)
+Executes, in order:
 
 1. `market_session.tick()` (7)
 2. `config.parameter_set()` + `config.account_state()` (16)

@@ -94,6 +94,7 @@ class Orchestrator:
         return result
 
     def run_cycle(self, index: str = "NIFTY") -> CycleResult:
+        """One single pass FLAT->open (used by the Phase 0 acceptance tests)."""
         self.t.stage("CONNECT & SESSION")
         self._call(self.session_mod, "tick")
         param_set = self._call(self.config, "parameter_set")
@@ -129,3 +130,52 @@ class Orchestrator:
             verdict=verdict, fills=fills, position=position,
             parameter_set=param_set,
         )
+
+    # scripted lifecycle tape for the full-day demo:
+    # (clock, regime, confidence, resulting_state_after_step, realized_pnl_on_exit)
+    SESSION_TAPE = [
+        ("09:20", "TREND_UP", 0.71, "SINGLE_SPREAD", 0.0),
+        ("11:30", "SIDEWAYS", 0.64, "IRON_FLY", 0.0),
+        ("13:30", "REVERSAL", 0.69, "RUNNER", 0.0),
+        ("15:25", "EOD", 1.00, "FLAT", 4200.0),
+    ]
+
+    def run_session(self, index: str = "NIFTY") -> object:
+        """Full-day walking skeleton: cron schedule, intraday morph lifecycle
+        (open -> iron fly -> runner -> exit), then the EOD AI research loop."""
+        self.t.stage("MOCK CRON SCHEDULE")
+        self._call(self.session_mod, "schedule")
+
+        self.t.stage("09:14 [cron atom-capture] PRE-OPEN — connect & warmup")
+        param_set = self._call(self.config, "parameter_set")
+        account = self._call(self.config, "account_state")
+        session = self._call(self.auth, "login")
+        instrument = self._call(self.instrument, "resolve", index)
+        snapshot = self._call(self.market_data, "snapshot", index, session)
+
+        position = self.ledger.flat()
+        for clock, reg_label, conf, next_state, realized in self.SESSION_TAPE:
+            self.t.stage(f"{clock} [cron atom-cycle] intraday cycle "
+                         f"(state {position.fsm_state})")
+            self._call(self.session_mod, "tick", clock)
+            regime = self._call(self.regime, "classify", snapshot, reg_label, conf)
+            decision = self._call(self.fsm, "decide", regime, position)
+            plan = self._call(self.builder, "build", decision, snapshot, instrument)
+            verdict = self._call(self.risk, "gate", plan, account, position)
+            fills = self._call(self.order, "execute", plan, verdict, session)
+            position = self._call(self.ledger, "apply", fills, next_state, realized)
+            self._call(self.stops, "manage", position, snapshot)
+
+        self.t.stage("15:30 [cron atom-squareoff] EOD — book flat, no overnight risk")
+
+        self.t.stage("15:45 [cron atom-research] EOD RESEARCH LOOP (AI, offline)")
+        findings = self._call(self.post_mortem, "analyze", ["T1"], self.t.events)
+        candidate = self._call(self.optimization, "propose", findings)
+        approved = self._call(self.feedback_gate, "evaluate", candidate)
+
+        self.t.stage("08:45+1 [cron atom-approval] MORNING GATE")
+        self.t.emit("config", "stage_parameter_set",
+                    {"version": approved.version, "state": approved.approval_state},
+                    msg=f"CONFIG → ParameterSet {approved.version} staged for next "
+                        f"session (awaiting human approval)")
+        return position
