@@ -1,3 +1,9 @@
+# ATOM PORCUPINE harness — report
+# generated: 2026-06-29T18:42:32Z UTC
+# command: python3 run_harness.py
+# python: Python 3.12.3
+# commit: 6a816db
+----------------------------------------------------------------------
 === ATOM PORCUPINE harness — Phase 0 ===
 # MOCK/REAL status — Phase 0 (update as phases land):
 #   auth               MOCK
