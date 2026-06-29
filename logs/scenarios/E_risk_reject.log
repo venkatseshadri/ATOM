@@ -1,0 +1,94 @@
+# ATOM scenario log — E_risk_reject
+# title : Risk gate rejects entry
+# expect: entry signal but drawdown floor breached → no order, stays FLAT
+# phase : 0 (walking skeleton — values illustrative)
+# MOCK/REAL status — Phase 0 (update as phases land):
+#   auth               MOCK
+#   config             MOCK
+#   feedback_gate      MOCK
+#   instrument         MOCK
+#   ledger             MOCK
+#   market_data        MOCK
+#   market_session     MOCK
+#   optimization       MOCK
+#   order              MOCK (paper)
+#   post_mortem        MOCK
+#   regime             MOCK
+#   risk               MOCK
+#   stop_management    MOCK
+#   strategy_fsm       MOCK (scripted tape)
+#   structure_builder  MOCK
+#   telemetry          REAL
+----------------------------------------------------------------------
+  [telemetry       ] TELEMETRY → audit trail open
+
+>>> SCENARIO E_risk_reject — Risk gate rejects entry
+  [market_session  ] EXPECT → entry signal but drawdown floor breached → no order, stays FLAT
+  → ENTER MarketSession.schedule         [src/atom/modules/market_session.py:24]  « stub — no business logic yet »
+  [market_session  ] MOCK CRON schedule (illustrative):
+  [market_session  ]     09:14              atom-capture.timer     → feed warmup / connect
+  [market_session  ]     09:15              atom-session.timer     → entry window opens
+  [market_session  ]     */1m 09:20–15:20   atom-cycle.timer       → intraday decision cycle
+  [market_session  ]     15:20              atom-lockout.timer     → no new entries
+  [market_session  ]     15:30              atom-squareoff.timer   → force EOD square-off
+  [market_session  ]     15:45              atom-research.timer    → EOD AI research loop (offline)
+  [market_session  ]     08:45+1            atom-approval.timer    → morning human approval gate
+  ← EXIT  MarketSession.schedule         → returns list
+
+>>> 09:14 [cron atom-capture] PRE-OPEN — connect & warmup
+  → ENTER Config.parameter_set           [src/atom/config.py:17]  « stub — no business logic yet »
+  [config          ] CONFIG → loaded day's frozen ParameterSet (version phase0-canned)
+  ← EXIT  Config.parameter_set           → returns ParameterSet
+  → ENTER Config.account_state           [src/atom/config.py:24]  « stub — no business logic yet »
+  [config          ] CONFIG → account state ₹2,00,000 funds (G1 placeholder provider)
+  ← EXIT  Config.account_state           → returns AccountState
+  → ENTER Auth.login                     [src/atom/modules/auth.py:12]  « stub — no business logic yet »
+  [auth            ] AUTH attempted → broker gateway (paper)
+  [auth            ] dummy broker login SUCCESS → session authenticated (paper)
+  ← EXIT  Auth.login                     → returns Session
+  → ENTER InstrumentMaster.resolve       [src/atom/modules/instrument.py:14]  « stub — no business logic yet »
+  [instrument      ] INSTRUMENT master → NIFTY weekly expiry 03JUL26, lot 75, tick 0.05
+  ← EXIT  InstrumentMaster.resolve       → returns Instrument
+  → ENTER MarketData.snapshot            [src/atom/modules/market_data.py:21]  « stub — no business logic yet »
+  [market_data     ] DATA CAPTURE started → feed connected (paper) → subscribing NIFTY chain
+  [market_data     ] tick 1/3 flowing → NIFTY spot ₹23,408.0
+  [market_data     ] tick 2/3 flowing → NIFTY spot ₹23,411.5
+  [market_data     ] tick 3/3 flowing → NIFTY spot ₹23,412.5
+  [market_data     ] snapshot assembled → spot ₹23,412.5, 2 strikes, IV~12.5%
+  ← EXIT  MarketData.snapshot            → returns MarketSnapshot
+
+>>> 09:20 [cron atom-cycle] intraday cycle (state FLAT)
+  → ENTER MarketSession.tick             [src/atom/modules/market_session.py:32]  « stub — no business logic yet »
+  [market_session  ] SESSION → 09:20 market OPEN, within entry window
+  ← EXIT  MarketSession.tick             → returns str
+  → ENTER Regime.classify                [src/atom/modules/regime.py:16]  « stub — no business logic yet »
+  [regime          ] MONITORING → 7-family read {'SuperTrend': 'bull', 'ADX': 22, 'RSI': 54, 'ATR%': 0.4, 'Volume': 'avg', 'Structure': 'range', 'PCR': 0.98} → regime=TREND_UP (conf 0.71)
+  ← EXIT  Regime.classify                → returns RegimeState
+  → ENTER StrategyFSM.decide             [src/atom/modules/strategy_fsm.py:24]  « stub — no business logic yet »
+  [strategy_fsm    ] FSM [state=FLAT + regime=TREND_UP] → OPEN (bull_put_spread)
+  ← EXIT  StrategyFSM.decide             → returns StrategyDecision
+  → ENTER StructureBuilder.build         [src/atom/modules/structure_builder.py:23]  « stub — no business logic yet »
+  [structure_builder] OPEN bull put spread @ NIFTY ₹23,412.5 → SELL 23400 PE @ ₹123.40 | BUY 23300 PE @ ₹45.60 (hedge) → credit ₹5,835, max loss ₹1,665
+  ← EXIT  StructureBuilder.build         → returns StructurePlan
+  → ENTER Risk.gate                      [src/atom/modules/risk.py:11]  « stub — no business logic yet »
+  [risk            ] RISK gate → BREACH DRAWDOWN_FLOOR_10PCT → REJECTED (no order)
+  ← EXIT  Risk.gate                      → returns RiskVerdict
+
+>>> 15:30 [cron atom-squareoff] EOD — book flat, no overnight risk
+
+>>> 15:45 [cron atom-research] EOD RESEARCH LOOP (AI, offline)
+  → ENTER PostMortem.analyze             [src/atom/modules/post_mortem.py:9]  « stub — no business logic yet »
+  [post_mortem     ] AI POST-MORTEM → 1 trade(s) scored (WIN, exit=EOD), regime calls 3/4 correct, slippage ₹120 | per-trade/session/regime over 48 events
+  ← EXIT  PostMortem.analyze             → returns dict
+  → ENTER Optimization.propose           [src/atom/modules/optimization.py:12]  « stub — no business logic yet »
+  [optimization    ] AI OPTIMIZER (LLM) → candidate cand-1: ADX entry 22→24, short Δ 0.45→0.40 | objective: drawdown-adjusted PnL ↑, survival OK
+  ← EXIT  Optimization.propose           → returns ParameterSet
+  → ENTER FeedbackGate.evaluate          [src/atom/modules/feedback_gate.py:13]  « stub — no business logic yet »
+  [feedback_gate   ] FEEDBACK GATE → PORCUPINE backtest 60d PASS, promotion 1/2 days → APPROVED (pending 08:45 morning human approval)
+  ← EXIT  FeedbackGate.evaluate          → returns ParameterSet
+
+>>> 08:45+1 [cron atom-approval] MORNING GATE
+  [config          ] CONFIG → ParameterSet cand-1 staged for next session (awaiting human approval)
+
+=== end → state FLAT, realized P&L ₹+0 ===
+modules traced: 13/16

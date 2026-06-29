@@ -45,11 +45,17 @@ class StructureBuilder:
             msg = ("LEG SHIFT (morph) → CLOSE bull put spread (threatened): "
                    "BUY back 23400 PE | SELL 23300 PE → KEEP bear call as RUNNER")
         elif i == "EXIT":
-            legs = (self._leg(instrument, 23500, "BUY", 61.00, "CE"),
-                    self._leg(instrument, 23600, "SELL", 28.00, "CE"))
+            if decision.structure == "square_off_put":
+                legs = (self._leg(instrument, 23400, "BUY", 118.00),
+                        self._leg(instrument, 23300, "SELL", 70.00))
+                msg = ("EXIT → square off bull put spread: "
+                       "BUY back 23400 PE | SELL 23300 PE")
+            else:
+                legs = (self._leg(instrument, 23500, "BUY", 61.00, "CE"),
+                        self._leg(instrument, 23600, "SELL", 28.00, "CE"))
+                msg = ("EXIT → square off RUNNER (bear call): "
+                       "BUY back 23500 CE | SELL 23600 CE")
             credit, max_loss = 0.0, 0.0
-            msg = ("EXIT → square off RUNNER (bear call): "
-                   "BUY back 23500 CE | SELL 23600 CE")
         else:
             legs, credit, max_loss = (), 0.0, 0.0
             msg = "HOLD — no structure change"

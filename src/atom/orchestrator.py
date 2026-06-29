@@ -14,6 +14,7 @@ import os
 from dataclasses import dataclass
 
 from .config import Config
+from .contracts import StrategyDecision
 from .telemetry import Telemetry
 from .modules.auth import Auth
 from .modules.instrument import InstrumentMaster
@@ -131,19 +132,12 @@ class Orchestrator:
             parameter_set=param_set,
         )
 
-    # scripted lifecycle tape for the full-day demo:
-    # (clock, regime, confidence, resulting_state_after_step, realized_pnl_on_exit)
-    SESSION_TAPE = [
-        ("09:20", "TREND_UP", 0.71, "SINGLE_SPREAD", 0.0),
-        ("11:30", "SIDEWAYS", 0.64, "IRON_FLY", 0.0),
-        ("13:30", "REVERSAL", 0.69, "RUNNER", 0.0),
-        ("15:25", "EOD", 1.00, "FLAT", 4200.0),
-    ]
-
-    def run_session(self, index: str = "NIFTY") -> object:
-        """Full-day walking skeleton: cron schedule, intraday morph lifecycle
-        (open -> iron fly -> runner -> exit), then the EOD AI research loop."""
-        self.t.stage("MOCK CRON SCHEDULE")
+    def run_scenario(self, scenario, index: str = "NIFTY") -> object:
+        """Run one scripted scenario (morph/SL/TSL/TP/reject) end-to-end with the
+        full traced session: cron, pre-open, the scenario's cycles, EOD AI research."""
+        self.t.stage(f"SCENARIO {scenario.name} — {scenario.title}")
+        self.t.emit("market_session", "scenario", {"name": scenario.name},
+                    msg=f"EXPECT → {scenario.expect}")
         self._call(self.session_mod, "schedule")
 
         self.t.stage("09:14 [cron atom-capture] PRE-OPEN — connect & warmup")
@@ -154,16 +148,37 @@ class Orchestrator:
         snapshot = self._call(self.market_data, "snapshot", index, session)
 
         position = self.ledger.flat()
-        for clock, reg_label, conf, next_state, realized in self.SESSION_TAPE:
-            self.t.stage(f"{clock} [cron atom-cycle] intraday cycle "
+        for step in scenario.steps:
+            self.t.stage(f"{step.clock} [cron atom-cycle] intraday cycle "
                          f"(state {position.fsm_state})")
-            self._call(self.session_mod, "tick", clock)
-            regime = self._call(self.regime, "classify", snapshot, reg_label, conf)
+            self._call(self.session_mod, "tick", step.clock)
+            regime = self._call(self.regime, "classify", snapshot, step.regime, step.conf)
+
+            if step.reject:
+                decision = self._call(self.fsm, "decide", regime, position)
+                plan = self._call(self.builder, "build", decision, snapshot, instrument)
+                self._call(self.risk, "gate", plan, account, position, step.reject)
+                continue
+
+            if step.stop_event:
+                self._call(self.stops, "manage", position, snapshot, step.stop_event)
+                decision = StrategyDecision("EXIT", "square_off_put",
+                                            f"stop:{step.stop_event}")
+                self.t.emit("strategy_fsm", "decide", {"intent": "EXIT"},
+                            msg=f"FSM ← stop trigger {step.stop_event} → EXIT (square_off)")
+                plan = self._call(self.builder, "build", decision, snapshot, instrument)
+                verdict = self._call(self.risk, "gate", plan, account, position)
+                fills = self._call(self.order, "execute", plan, verdict, session)
+                position = self._call(self.ledger, "apply", fills, step.next_state,
+                                      step.realized)
+                continue
+
             decision = self._call(self.fsm, "decide", regime, position)
             plan = self._call(self.builder, "build", decision, snapshot, instrument)
             verdict = self._call(self.risk, "gate", plan, account, position)
             fills = self._call(self.order, "execute", plan, verdict, session)
-            position = self._call(self.ledger, "apply", fills, next_state, realized)
+            position = self._call(self.ledger, "apply", fills, step.next_state,
+                                  step.realized)
             self._call(self.stops, "manage", position, snapshot)
 
         self.t.stage("15:30 [cron atom-squareoff] EOD — book flat, no overnight risk")
@@ -172,7 +187,6 @@ class Orchestrator:
         findings = self._call(self.post_mortem, "analyze", ["T1"], self.t.events)
         candidate = self._call(self.optimization, "propose", findings)
         approved = self._call(self.feedback_gate, "evaluate", candidate)
-
         self.t.stage("08:45+1 [cron atom-approval] MORNING GATE")
         self.t.emit("config", "stage_parameter_set",
                     {"version": approved.version, "state": approved.approval_state},

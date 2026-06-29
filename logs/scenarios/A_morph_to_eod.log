@@ -1,37 +1,25 @@
-# ATOM Phase 0 — run log (scenario A: morph -> EOD)
-# generated: 2026-06-29T06:08:04Z UTC
-# command: python3 run_phase0.py
-# commit: 3db9b7a
-# note: walking skeleton; see logs/scenarios/ for SL/TP/TSL/reject logs
+# ATOM scenario log — A_morph_to_eod
+# title : Morph lifecycle → EOD square-off
+# expect: open bull put → add bear call (iron fly) → close threatened leg (runner) → EOD exit, realized ₹+4,200
+# phase : 0 (walking skeleton — values illustrative)
+# MOCK/REAL status — Phase 0 (update as phases land):
+#   auth               MOCK
+#   config             MOCK
+#   feedback_gate      MOCK
+#   instrument         MOCK
+#   ledger             MOCK
+#   market_data        MOCK
+#   market_session     MOCK
+#   optimization       MOCK
+#   order              MOCK (paper)
+#   post_mortem        MOCK
+#   regime             MOCK
+#   risk               MOCK
+#   stop_management    MOCK
+#   strategy_fsm       MOCK (scripted tape)
+#   structure_builder  MOCK
+#   telemetry          REAL
 ----------------------------------------------------------------------
-=== ATOM Phase 0 — walking skeleton: one session flow (dummy data) ===
-
-=== built files (Phase 0) ===
-  src/atom/__init__.py
-  src/atom/config.py
-  src/atom/contracts.py
-  src/atom/modules/__init__.py
-  src/atom/modules/auth.py
-  src/atom/modules/feedback_gate.py
-  src/atom/modules/instrument.py
-  src/atom/modules/ledger.py
-  src/atom/modules/market_data.py
-  src/atom/modules/market_session.py
-  src/atom/modules/optimization.py
-  src/atom/modules/order.py
-  src/atom/modules/post_mortem.py
-  src/atom/modules/regime.py
-  src/atom/modules/risk.py
-  src/atom/modules/stop_management.py
-  src/atom/modules/strategy_fsm.py
-  src/atom/modules/structure_builder.py
-  src/atom/orchestrator.py
-  src/atom/scenarios.py
-  src/atom/status.py
-  src/atom/telemetry.py
-  src/atom/util.py
-
-=== traced FULL-DAY session — scenario A (morph → EOD) ===
   [telemetry       ] TELEMETRY → audit trail open
 
 >>> SCENARIO A_morph_to_eod — Morph lifecycle → EOD square-off
@@ -197,7 +185,5 @@
 >>> 08:45+1 [cron atom-approval] MORNING GATE
   [config          ] CONFIG → ParameterSet cand-1 staged for next session (awaiting human approval)
 
-=== end of day → position FLAT, realized P&L ₹+4,200 ===
-modules that emitted a trace: 16/16
-
-(see logs/scenarios/ for one log per scenario: SL / TP / TSL / reject)
+=== end → state FLAT, realized P&L ₹+4,200 ===
+modules traced: 16/16

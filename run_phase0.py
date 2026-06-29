@@ -20,13 +20,15 @@ def main() -> None:
     for f in sorted(glob.glob("src/atom/**/*.py", recursive=True)):
         print(f"  {f}")
 
-    print("\n=== traced FULL-DAY session (ENTER/EXIT per module method) ===")
+    print("\n=== traced FULL-DAY session — scenario A (morph → EOD) ===")
+    from atom.scenarios import SCENARIOS  # noqa: E402
     orch = Orchestrator()
-    final = orch.run_session("NIFTY")
+    final = orch.run_scenario(SCENARIOS[0], "NIFTY")
 
     print(f"\n=== end of day → position {final.fsm_state}, "
           f"realized P&L ₹{final.realized_pnl:+,.0f} ===")
     print(f"modules that emitted a trace: {len(orch.t.sources())}/16")
+    print("\n(see logs/scenarios/ for one log per scenario: SL / TP / TSL / reject)")
 
 
 if __name__ == "__main__":

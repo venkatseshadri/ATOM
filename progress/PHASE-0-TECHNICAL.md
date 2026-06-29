@@ -107,6 +107,23 @@ the log shows the whole day:
 4. **15:30 cron square-off**, **15:45 cron EOD AI research loop**
    (AI post-mortem → AI/LLM optimizer → feedback gate + PORCUPINE backtest), **08:45+1 morning approval gate**.
 
+### `run_scenario(scenario, index)` — one scenario, one log
+Generic runner over a scenario tape (`src/atom/scenarios.py`) exercising distinct exit
+paths. `python3 run_scenarios.py` writes one log per scenario to `logs/scenarios/`, each
+headed by a **MOCK/REAL legend** (`src/atom/status.py`) so the logs stay meaningful as
+phases turn modules real:
+
+| Scenario | Exit path |
+|----------|-----------|
+| A_morph_to_eod | morph → iron fly → runner → EOD square-off |
+| B_stop_loss | SL breach → exit at max loss |
+| C_take_profit | TP target → exit in profit |
+| D_trailing_stop | TSL trails → triggers → exit |
+| E_risk_reject | risk gate rejects → no order |
+
+Stops (Module 6) raise the SL/TSL/TP breach → the orchestrator funnels to a single exit
+path (per SEAM_RECONCILIATION §F/G); risk (Module 5) can reject an entry.
+
 ### `run_cycle(index)` — single pass (used by the acceptance tests)
 Executes, in order:
 
@@ -140,13 +157,15 @@ Returns a `CycleResult` carrying every contract object in pipeline order.
 | `test_contract_registry_complete` | T0.2 | every `ALL_CONTRACTS` member is a frozen dataclass |
 | `test_regime_stub_is_canned_not_behavioural` | T0.3 | different inputs → same canned label |
 
-**Result:** `5 passed in 0.03s`.
+Plus `tests/test_scenarios.py` runs all 5 scenarios and checks end-states (FLAT, loss on
+SL, gain on TP, reject stays flat). **Result: `10 passed`.**
 
 ## 7. How to run
 
 ```bash
-python3 run_phase0.py      # prints the traced pass + contract objects + 16/16
-python3 -m pytest          # 5 passed
+python3 run_phase0.py      # scenario A to stdout (full day) + 16/16
+python3 run_scenarios.py   # one log per scenario -> logs/scenarios/
+python3 -m pytest          # 10 passed
 ```
 
 ## 8. DoD status (Phase 0)

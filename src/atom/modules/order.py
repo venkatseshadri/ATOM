@@ -11,6 +11,9 @@ class Order:
 
     def execute(self, plan: StructurePlan, verdict: RiskVerdict,
                 session: Session) -> list[Fill]:
+        if not verdict.approved:
+            self.t.emit("order", "skip", {}, msg="ORDER → skipped (risk rejected)")
+            return []
         self.t.emit("order", "execute", {"legs": len(plan.legs)},
                     msg=f"ORDER placement → {len(plan.legs)} leg(s)")
         fills: list[Fill] = []
