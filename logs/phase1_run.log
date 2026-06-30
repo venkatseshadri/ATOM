@@ -1,0 +1,17 @@
+# ATOM Phase 1 — one cycle on real Penguin NIFTY data
+# generated: 2026-06-30T10:57:59Z UTC
+# command: python3 run_live_once.py --fixture
+# REAL: market_data(penguin reader), regime(7-family consensus), strategy_fsm(entry),
+#       instrument(consume atm/expiry), structure_builder(real strikes+premiums)
+# PAPER: order is recorded, NO broker order. Stops at order-placed (no lifecycle).
+# data source: capture_nifty.sqlite market_data_enriched + option_prices (real)
+----------------------------------------------------------------------
+=== ATOM Phase 1 — one cycle (fixture) ===
+
+SCOUT  bar 2026-06-30T12:12:00  spot ₹23928.35  ATM 23950  expiry 30-JUN-2026
+       regime=TREND_DOWN conf=0.48  votes={'trend': 0, 'momentum': -1, 'price_action': -1, 'structure': -1, 'sentiment': 1, 'participation': 0, 'volatility': 0}
+DECIDE intent=OPEN  (bear_call_spread)  fsm=SINGLE_SPREAD
+ORDER  (PAPER — no broker):
+         SELL 23950CE @ ₹36.5
+         BUY 24050CE @ ₹10.1
+       net credit ₹1,980  max loss ₹5,520  lot 75

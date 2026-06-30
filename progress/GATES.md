@@ -5,8 +5,8 @@ Claude builds and reports; the Board signs. Record sign-offs here.
 
 | Gate | Phase | Criteria (see phases/phase-N/testcases.md) | Status | Signed by / date |
 |------|-------|--------------------------------------------|--------|------------------|
-| GATE 0 | 0 Skeleton | contracts frozen, 16 stubs, one full pass, 16/16 traces, tests green | ⏳ **ready — awaiting sign-off** | — |
-| GATE 1 | 1 Regime + Signal | real snapshot, 7-family regime, FSM decisions on replay, no orders | ⬜ not reached | — |
+| GATE 0 | 0 Skeleton | contracts frozen, 16 stubs, one full pass, 16/16 traces, tests green | ✅ **signed** | Board, 2026-06-30 |
+| GATE 1 | 1 Regime + Signal | real Penguin snapshot, 7-family regime, FSM entry, real-premium paper order; freshness gate; 27 tests | ⏳ **ready — awaiting sign-off** | — |
 | GATE 2 | 2 Strike + Structure | expiry/strike/symbol resolution, concrete legs (paper) | ⬜ | — |
 | GATE 3 | 3 Risk + Execution | risk invariants (no breach), stops trail, paper fills, EOD square-off | ⬜ | — |
 | GATE 4 | 4 Ledger + Monitor | P&L accuracy, audit reconstruction, frozen config, restart recovery | ⬜ | — |
