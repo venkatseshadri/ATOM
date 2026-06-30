@@ -140,3 +140,38 @@ def test_config_drives_wing(tmp_path):
     assert o.lot == 50
     assert abs(o.legs[0][1] - o.legs[1][1]) == 100   # wing = 2 strikes * 50
     phase1.configure(config.load_config())           # restore defaults
+
+
+# ---- operator-log presentation views (family / branch / AI mock) ------------
+
+def test_family_view_maps_votes_to_words():
+    votes = {"trend": 1, "momentum": -1, "price_action": 0, "structure": -1,
+             "sentiment": 1, "participation": 0, "volatility": 0}
+    fv = phase1.family_view(votes)
+    assert len(fv) == 7                              # all 7 families, ordered
+    assert fv[0] == ("Trend (SuperTrend)", "Up")
+    assert fv[1][1] == "Down" and fv[2][1] == "Neutral"
+    assert fv[6][1] == "Neutral"                     # volatility always neutral
+
+
+def test_branch_scores_winner_matches_regime():
+    ind = {"st_consensus": "bearish", "rsi": 20, "ema20_slope": -1.0, "structure_type": "LL",
+           "pcr_total": 1.3, "sentiment": "bearish", "vwap": 110, "spot": 100, "adx": 40}
+    label, conf, probs, _ = phase1.classify_regime(ind)
+    b = phase1.branch_scores(ind)
+    assert set(b) == {"NotUp", "NotDown", "Sideways"}
+    # probs alias the real three-way; winner branch maps back to the regime
+    assert b["NotUp"]["prob"] == probs["DOWN"] and b["NotUp"]["regime"] == "TREND_DOWN"
+    winner = max(b, key=lambda k: b[k]["prob"])
+    assert b[winner]["regime"] == label
+    assert b["NotUp"]["value"] >= 1                  # raw bearish family mass
+
+
+def test_ai_optimizer_is_mock_and_type_safe():
+    from atom import ai_optimizer, config
+    cfg = config.load_config()
+    opt = ai_optimizer.load_optimized(cfg)
+    assert "MOCK" in opt["source"]                   # honesty: labelled mock
+    for k, v in opt["overrides"].items():
+        assert k in cfg and type(v) is type(cfg[k])  # keys real, types preserved
+        assert opt["applied"][k] == v                # merged onto base

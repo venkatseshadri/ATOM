@@ -4,15 +4,16 @@
   python3 run_phase1_log.py --existing  # existing order present → skip
 
 Broker lines (Shoonya auth / token / broker order #) are PAPER/MOCK in Phase 1 — broker
-wiring is Phase 3. Everything else (data, ATM, indicators, decision, strikes, premiums)
-is REAL from Penguin.
+wiring is Phase 3. The AI-optimizer values (step 'Load optimized values from AI module')
+are MOCK — the real research loop is Phase 5. Everything else (data, ATM, indicators,
+7-family vote, decision, strikes, premiums) is REAL from Penguin.
 """
 import sqlite3
 import sys
 
 sys.path.insert(0, "src")
 
-from atom import config, lights, phase1   # noqa: E402
+from atom import ai_optimizer, config, lights, phase1   # noqa: E402
 from atom.atom_state import AtomState     # noqa: E402
 from atom.penguin import PenguinReader, _f  # noqa: E402
 
@@ -35,6 +36,10 @@ def main() -> None:
     reader = PenguinReader(FIX)
     state = AtomState("data/atom_state_log.sqlite")
     state.reset()
+
+    cfg = config.load_config()
+    phase1.configure(cfg)
+    lights.configure(cfg)
 
     if existing:
         snap = reader.latest_snapshot()
@@ -61,9 +66,6 @@ def main() -> None:
         n += 1
         print(f"{n:2}. {msg}")
 
-    cfg = config.load_config()
-    phase1.configure(cfg)
-    lights.configure(cfg)
     show = ["strategy.wing.strikes", "strategy.lot.size", "risk.sl.pct",
             "risk.deploy.inr", "expiry.rule", "regime.entry.min_confidence",
             "regime.adx.trend_threshold", "indicator.ema.enabled",
@@ -77,6 +79,16 @@ def main() -> None:
         v = "true" if cfg[k] is True else "false" if cfg[k] is False else cfg[k]
         print(f"      {k}={v}")
     print(f"      … ({len(cfg)} keys loaded from config/atom.conf)")
+
+    # --- AI optimizer (MOCK — Phase 5 is the real research loop) ---
+    opt = ai_optimizer.load_optimized(cfg)
+    line(f"Load optimized values from AI module — {opt['source']}")
+    if opt["overrides"]:
+        for k, v in opt["overrides"].items():
+            print(f"      {k}: {cfg[k]} → {v}   (mock-tuned)")
+    else:
+        print("      (no overrides — running base config)")
+
     line("Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)")
     line("Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)")
     line(f"Data flow validated — Penguin capture_nifty.sqlite (read-only), bar {snap.ts}")
@@ -85,6 +97,21 @@ def main() -> None:
     line(f"Indicator calculation — EMA-slope {_f(ind.get('ema20_slope'))}, RSI {_f(ind.get('rsi'))}, "
          f"ST {ind.get('st_consensus')}, ADX {_f(ind.get('adx'))}, IV {_f(ind.get('india_vix'))}, "
          f"PCR {_f(ind.get('pcr_total'))} — successful   [consumed from Penguin]")
+
+    # --- 7a/7b ATOM-Lights traffic-light layer (SHADOW — logged, does not gate yet) ---
+    res = lights.evaluate(reader, snap.ind, snap.days_to_expiry)
+    pat = "  ".join(f"{tf}{_DOT[res.lights[tf]]}" for tf in ("5m", "15m", "30m", "60m", "240m", "1D"))
+    line(f"Traffic-light system — {pat}   Gap:{res.gap}")
+    line(f"   60m candle = {res.lights['60m']} → PERMISSION {res.permission} "
+         f"| conviction/size {res.size} | trigger {res.trigger}")
+
+    # --- 7c per-family direction (the 7-family vote, broken out) ---
+    regime, conf, probs, votes = phase1.classify_regime(snap.ind)
+    fam = phase1.family_view(votes)
+    line(f"7-family direction — {regime} (conf {conf*100:.0f}%):")
+    for i, (name, word) in enumerate(fam, 1):
+        print(f"      Family {i} — {name}: {word}")
+
     line("Validating if existing orders exist")
 
     if decision["intent"] == "SKIP":
@@ -95,31 +122,29 @@ def main() -> None:
         print("---------------------------------------------")
         return
 
-    p = decision["probs"]
     line("No existing orders exist")
-    line(f"7-family direction — {decision['regime']} (conf {decision['confidence']*100:.0f}%)  "
-         f"[Up {p['UP']*100:.0f}% / Down {p['DOWN']*100:.0f}% / Sideways {p['SIDEWAYS']*100:.0f}%]")
 
-    # --- ATOM-Lights layer (SHADOW — logged, does not gate yet) ---
-    res = lights.evaluate(reader, snap.ind, snap.days_to_expiry)
-    pat = "  ".join(f"{tf}{_DOT[res.lights[tf]]}" for tf in ("5m", "15m", "30m", "60m", "240m", "1D"))
-    line(f"ATOM-Lights traffic pattern — {pat}   Gap:{res.gap}")
-    line(f"   60m PERMISSION = {res.lights['60m']} → {res.permission}   "
-         f"| conviction/size {res.size} | trigger {res.trigger}")
-    sh = lights.shadow_entry(res, decision["regime"])
+    # --- DecisionMaker: anti-bias three-way (NotUp / NotDown / Sideways) ---
+    branches = phase1.branch_scores(snap.ind)
+    for name in ("NotUp", "NotDown", "Sideways"):
+        b = branches[name]
+        line(f"{name} value calculated {b['value']} with probability {b['prob']*100:.0f}%")
+    win_name = max(branches, key=lambda k: branches[k]["prob"])
+    win = branches[win_name]
+
+    # --- ATOM-Lights shadow verdict (does not gate the 7-family paper order) ---
+    sh = lights.shadow_entry(res, regime)
     verdict = f"ENTER {sh['instrument']} (size {sh['size']})" if sh["enter"] else "no-enter"
-    line(f"   ATOM-Lights [SHADOW] AND-gate → {verdict}  — {sh['reason']}")
-    line(f"   (shadow: logged for P(profit|state); 7-family below still drives the paper order)")
+    line(f"ATOM-Lights [SHADOW] AND-gate → {verdict}  — {sh['reason']} "
+         f"(logged for P(profit|state); 7-family below drives the paper order)")
 
     if not order:
-        line(f"DecisionMaker — {decision['regime']} ({decision['confidence']*100:.0f}%) "
-             f"→ no trade ({decision['structure']})")
+        line(f"DecisionMaker — {win_name} wins ({win['prob']*100:.0f}%) "
+             f"→ {win['trade']} — no order placed (entry gate not met)")
         print("---------------------------------------------")
         return
 
-    trade = "trending-up (bull put spread)" if decision["regime"] == "TREND_UP" else "trending-down (bear call spread)"
-    winner = "Up" if decision["regime"] == "TREND_UP" else "Down"
-    line(f"DecisionMaker — {winner} value wins ({decision['confidence']*100:.0f}%) → taking {trade}")
+    line(f"DecisionMaker — {win_name} value wins ({win['prob']*100:.0f}%) → taking {win['trade']}")
     (h_act, h_k, h_r, h_ltp), (s_act, s_k, s_r, s_ltp) = order.legs
     off = (h_k - snap.atm_strike) // STEP
     line(f"Placing HEDGE order ATM{off:+d} ({h_r}) — strike (ATM {snap.atm_strike} {off:+d}×{STEP} = {h_k}) "

@@ -94,6 +94,48 @@ def classify_regime(ind: dict) -> tuple[str, float, dict, dict]:
     return label_map[winner], round(probs[winner], 2), probs, votes
 
 
+# ---- presentation views over the vote/regime (operator log) ------------------
+
+# 7 families in canonical order; volatility is non-directional (informs confidence only).
+FAMILY_NAMES = {
+    "trend": "Trend (SuperTrend)", "momentum": "Momentum (RSI)",
+    "price_action": "Price-action (EMA slope)", "structure": "Market structure",
+    "sentiment": "Options sentiment (PCR)", "participation": "Participation (VWAP)",
+    "volatility": "Volatility (non-directional)",
+}
+
+
+def family_view(votes: dict) -> list[tuple[str, str]]:
+    """[(family display name, direction word)] for the per-family log line.
+    +1 → Up, -1 → Down, 0 → Neutral (volatility always Neutral by design)."""
+    word = {1: "Up", -1: "Down", 0: "Neutral"}
+    return [(FAMILY_NAMES[k], word[votes.get(k, 0)]) for k in FAMILY_NAMES]
+
+
+def branch_scores(ind: dict) -> dict:
+    """Anti-bias three-way DecisionMaker view. Each branch = a 'permission' the market
+    has NOT invalidated:
+        NotDown  = up-permission   (bullish thesis survives) → TREND_UP trade
+        NotUp    = down-permission (bearish thesis survives) → TREND_DOWN trade
+        Sideways = neither survives
+    `value` = raw directional mass (family votes that way); `prob` = normalised
+    probability from classify_regime. Winner = argmax(prob), matches classify_regime.
+    Mapping (NotDown↔up) is one constant — flip if the desk wants the inverse label.
+    """
+    _, _, probs, votes = classify_regime(ind)
+    bull = sum(1 for k, v in votes.items() if k != "volatility" and v > 0)
+    bear = sum(1 for k, v in votes.items() if k != "volatility" and v < 0)
+    neutral = 6 - bull - bear
+    return {
+        "NotDown": {"value": bull, "prob": probs["UP"], "regime": "TREND_UP",
+                    "trade": "trending-up (bull put spread)"},
+        "NotUp": {"value": bear, "prob": probs["DOWN"], "regime": "TREND_DOWN",
+                  "trade": "trending-down (bear call spread)"},
+        "Sideways": {"value": neutral, "prob": probs["SIDEWAYS"], "regime": "SIDEWAYS",
+                     "trade": "no-trade (sideways)"},
+    }
+
+
 # ---- FSM entry decision (Phase 1: entry only) --------------------------------
 
 def decide(fsm_state: str, regime: str, conf: float) -> tuple[str, str]:
