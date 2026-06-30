@@ -34,20 +34,20 @@ def test_reader_is_readonly():
 def test_regime_bull_row():
     ind = {"st_consensus": "bullish", "rsi": 62, "ema20_slope": 1.0, "structure_type": "HH",
            "pcr_total": 0.8, "sentiment": "bullish", "vwap": 100, "spot": 110, "adx": 30}
-    label, conf, _ = phase1.classify_regime(ind)
+    label, conf, *_ = phase1.classify_regime(ind)
     assert label == "TREND_UP" and conf > 0
 
 
 def test_regime_bear_row():
     ind = {"st_consensus": "bearish", "rsi": 20, "ema20_slope": -1.0, "structure_type": "LL",
            "pcr_total": 1.3, "sentiment": "bearish", "vwap": 110, "spot": 100, "adx": 40}
-    label, _, _ = phase1.classify_regime(ind)
+    label, *_ = phase1.classify_regime(ind)
     assert label == "TREND_DOWN"
 
 
 def test_regime_low_adx_is_sideways():
     ind = {"st_consensus": "bullish", "rsi": 62, "structure_type": "HH", "adx": 10}
-    label, _, _ = phase1.classify_regime(ind)
+    label, *_ = phase1.classify_regime(ind)
     assert label == "SIDEWAYS"
 
 
@@ -73,7 +73,7 @@ def test_build_order_real_premiums():
     s = PenguinReader(FIX).latest_snapshot()
     o = phase1.build_order("bear_call_spread", s)
     assert o is not None
-    assert o.legs[0][0] == "SELL" and o.legs[1][0] == "BUY"
+    assert o.legs[0][0] == "BUY" and o.legs[1][0] == "SELL"  # hedge first
     assert all(leg[3] is not None for leg in o.legs)        # real LTPs
     assert o.net_credit != 0
 

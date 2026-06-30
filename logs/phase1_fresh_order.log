@@ -1,0 +1,25 @@
+# ATOM Phase 1 — operator log (fresh order)
+# generated: 2026-06-30T12:42:33Z UTC  commit: f267054
+# REAL: data/ATM/indicators/decision/strikes/premiums from Penguin (read-only)
+# MOCK/PAPER: Shoonya broker auth + order numbers (broker = Phase 3)
+
+---------------------------------------------
+ 1. Starting Trading module
+ 2. Broker authentication successful — Shoonya            [PAPER/MOCK — broker = Phase 3]
+ 3. Token obtained                                        [MOCK]
+ 4. Data flow validated — Penguin capture_nifty.sqlite (read-only), bar 2026-06-30T12:05:00
+ 5. NIFTY ATM is 23950   (spot ₹23,928.50, expiry 30-JUN-2026)
+ 6. Multi-TF candlesticks captured — OK
+ 7. Indicator calculation — EMA-slope -1.24, RSI 45.41, ST mixed, ADX 34.91, IV 13.42, PCR 0.817 — successful   [consumed from Penguin]
+ 8. Validating if existing orders exist
+ 9. No existing orders exist
+10. Up probability        29%
+11. Down probability      58%
+12. Sideways probability  13%
+13. DecisionMaker — Down value wins (58%) → taking trending-down (bear call spread)
+14. Placing HEDGE order ATM+4 (CE) — strike (ATM 23950 +4×50 = 24150) qty 75 (1 lot)
+15. Hedge order placed for 1 lot at ₹2.95   [PAPER order #P-0001]
+16. Placing ATM SHORT order ATM (CE) — strike (ATM 23950) qty 75 (1 lot)
+17. Short order placed for 1 lot at ₹36.5   [PAPER order #P-0002]
+18. Entry complete — net credit ₹2,516, max loss ₹12,484. Phase 1 stops here (no lifecycle).
+---------------------------------------------

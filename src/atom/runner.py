@@ -53,5 +53,5 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
     return {"action": decision["intent"], "bar_ts": snap.ts, "spot": snap.spot,
             "atm": snap.atm_strike, "expiry": snap.expiry,
             "regime": decision["regime"], "confidence": decision["confidence"],
-            "votes": decision["votes"], "structure": decision["structure"],
-            "order": order, "fsm_state": new_state}
+            "probs": decision["probs"], "votes": decision["votes"],
+            "structure": decision["structure"], "order": order, "fsm_state": new_state}

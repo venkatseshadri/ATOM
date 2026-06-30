@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from .penguin import Snapshot, _f
 
 LOT = 75
-WING_STRIKES = 2            # hedge = ATM ± 2 strikes (NIFTY 50 step => ₹100 wing)
+WING_STRIKES = 4           # hedge = ATM ± 4 strikes (NIFTY 50 step => ₹200 wing)
 STEP = 50
 ADX_TREND = 22.0           # trend-present gate
 CONF_ENTRY = 0.45          # min confidence to enter
@@ -53,22 +53,34 @@ def seven_family_vote(ind: dict) -> dict:
     return v
 
 
-def classify_regime(ind: dict) -> tuple[str, float, dict]:
+def classify_regime(ind: dict) -> tuple[str, float, dict, dict]:
+    """Return (label, confidence, probs{UP,DOWN,SIDEWAYS}, votes).
+
+    Three-way probability: ADX gives trend *strength* (directional mass); the rest is
+    sideways mass. Within the directional mass, bull/bear split by the family votes.
+    DecisionMaker = argmax(probs). (Defaults ‹TBD›; research-loop tunes.)
+    """
     votes = seven_family_vote(ind)
     adx = _f(ind.get("adx")) or 0.0
-    directional = [v for k, v in votes.items() if k != "volatility"]
-    voting = [v for v in directional if v != 0]
-    score = sum(directional)
-    n = len(voting) or 1
-
-    if adx < ADX_TREND:
-        return "SIDEWAYS", round(abs(score) / n, 2), votes
-    label = "TREND_UP" if score > 0 else "TREND_DOWN" if score < 0 else "SIDEWAYS"
-    # confidence = vote margin, boosted by trend strength (ADX), capped 1.0
-    margin = abs(score) / n
-    strength = min(adx / 50.0, 1.0)
-    conf = round(min(1.0, 0.5 * margin + 0.5 * strength), 2) if label != "SIDEWAYS" else round(margin, 2)
-    return label, conf, votes
+    bull = sum(1 for k, v in votes.items() if k != "volatility" and v > 0)
+    bear = sum(1 for k, v in votes.items() if k != "volatility" and v < 0)
+    total = bull + bear
+    strength = min(adx / 40.0, 1.0)            # directional mass from trend strength
+    if adx < ADX_TREND or total == 0:
+        # no trend strength → SIDEWAYS dominates regardless of vote lean
+        p_side = 1.0 if total == 0 else 0.6
+        p_up = 0.4 * bull / total if total else 0.0
+        p_down = 0.4 * bear / total if total else 0.0
+    else:
+        p_up = strength * bull / total
+        p_down = strength * bear / total
+        p_side = 1 - strength
+    s = p_up + p_down + p_side or 1
+    probs = {"UP": round(p_up / s, 3), "DOWN": round(p_down / s, 3),
+             "SIDEWAYS": round(p_side / s, 3)}
+    label_map = {"UP": "TREND_UP", "DOWN": "TREND_DOWN", "SIDEWAYS": "SIDEWAYS"}
+    winner = max(probs, key=probs.get)
+    return label_map[winner], round(probs[winner], 2), probs, votes
 
 
 # ---- FSM entry decision (Phase 1: entry only) --------------------------------
@@ -114,19 +126,20 @@ def build_order(structure: str, snap: Snapshot) -> PaperOrder | None:
     credit_per = short_ltp - hedge_ltp
     net_credit = round(credit_per * LOT, 2)
     max_loss = round((wing - credit_per) * LOT, 2)
-    legs = (("SELL", short_k, right, short_ltp), ("BUY", hedge_k, right, hedge_ltp))
+    # hedge leg placed FIRST (leg-in safety), then the short
+    legs = (("BUY", hedge_k, right, hedge_ltp), ("SELL", short_k, right, short_ltp))
     return PaperOrder(structure, legs, net_credit, max_loss, LOT)
 
 
 # ---- the cycle (pure): state + snapshot -> new_state, decision, paper_order ---
 
 def cycle(fsm_state: str, snap: Snapshot) -> tuple[str, dict, PaperOrder | None]:
-    regime, conf, votes = classify_regime(snap.ind)
+    regime, conf, probs, votes = classify_regime(snap.ind)
     intent, structure = decide(fsm_state, regime, conf)
     order = build_order(structure, snap) if intent == "OPEN" else None
     new_state = "SINGLE_SPREAD" if order else fsm_state
     if intent == "OPEN" and order is None:
         intent, structure = "STAND_DOWN", "premiums_unavailable"
-    decision = {"regime": regime, "confidence": conf, "votes": votes,
+    decision = {"regime": regime, "confidence": conf, "probs": probs, "votes": votes,
                 "intent": intent, "structure": structure}
     return new_state, decision, order

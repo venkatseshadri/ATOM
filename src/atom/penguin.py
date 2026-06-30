@@ -60,24 +60,34 @@ class PenguinReader:
         # read-only; never writes the live capture DB
         return sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
 
+    def _build(self, c, ind: dict, strike_window: int) -> Snapshot:
+        atm = int(_f(ind["atm_strike"]) or 0)
+        expiry = ind["expiry_weekly"] or ""
+        step = 50  # NIFTY
+        strikes = [atm + step * k for k in range(-strike_window, strike_window + 1)]
+        chain = self._option_chain(c, expiry, strikes)
+        return Snapshot(ts=ind["timestamp"], spot=_f(ind["spot"]) or 0.0, atm_strike=atm,
+                        expiry=expiry, days_to_expiry=int(_f(ind["days_to_weekly"]) or 0),
+                        ind=ind, chain=chain)
+
     def latest_snapshot(self, strike_window: int = 6) -> Snapshot | None:
         c = self._connect()
         try:
             row = c.execute(
                 f"select {','.join(ENRICHED_COLS)} from market_data_enriched "
                 f"order by timestamp desc limit 1").fetchone()
-            if not row:
-                return None
-            ind = dict(zip(ENRICHED_COLS, row))
-            atm = int(_f(ind["atm_strike"]) or 0)
-            expiry = ind["expiry_weekly"] or ""
-            step = 50  # NIFTY
-            strikes = [atm + step * k for k in range(-strike_window, strike_window + 1)]
-            chain = self._option_chain(c, expiry, strikes)
-            return Snapshot(
-                ts=ind["timestamp"], spot=_f(ind["spot"]) or 0.0, atm_strike=atm,
-                expiry=expiry, days_to_expiry=int(_f(ind["days_to_weekly"]) or 0),
-                ind=ind, chain=chain)
+            return self._build(c, dict(zip(ENRICHED_COLS, row)), strike_window) if row else None
+        finally:
+            c.close()
+
+    def recent_snapshots(self, limit: int = 60, strike_window: int = 6) -> list[Snapshot]:
+        """Newest-first snapshots for scanning (each uses the live option chain)."""
+        c = self._connect()
+        try:
+            rows = c.execute(
+                f"select {','.join(ENRICHED_COLS)} from market_data_enriched "
+                f"order by timestamp desc limit ?", (limit,)).fetchall()
+            return [self._build(c, dict(zip(ENRICHED_COLS, r)), strike_window) for r in rows]
         finally:
             c.close()
 
