@@ -33,6 +33,12 @@ load atom_state → read latest enriched bar (ro)
 SL is **not** polled — Phase 3 enforces stops via the trader's websocket callback (the
 trader is the persistent process; ATOM stays stateless per cycle).
 
+## Broker — ATOM has NO login of its own
+There is **one** Shoonya login: Penguin's (for capture). ATOM **leverages that session** —
+never a second broker login. Phase 1 makes **no broker call at all** (data comes from
+Penguin's DB). Phase 3 routes orders **through** Penguin's session/order path, not an ATOM
+broker connection. So ATOM holds zero broker credentials.
+
 ## 7-family consensus (Phase-1 defaults, ‹TBD› — research-loop tunes)
 Each directional family votes +1/−1/0; equal weight; `adx` gates trend-present and boosts
 confidence. Entry only when confidence ≥ 0.45 and regime ∈ {TREND_UP, TREND_DOWN}.

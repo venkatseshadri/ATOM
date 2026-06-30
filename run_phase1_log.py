@@ -61,8 +61,8 @@ def main() -> None:
 
     print("---------------------------------------------")
     line("Starting Trading module")
-    line("Broker authentication successful — Shoonya            [PAPER/MOCK — broker = Phase 3]")
-    line("Token obtained                                        [MOCK]")
+    line("Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)")
+    line("Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)")
     line(f"Data flow validated — Penguin capture_nifty.sqlite (read-only), bar {snap.ts}")
     line(f"NIFTY ATM is {snap.atm_strike}   (spot ₹{snap.spot:,.2f}, expiry {snap.expiry})")
     line("Multi-TF candlesticks captured — OK")
@@ -98,9 +98,9 @@ def main() -> None:
     off = (h_k - snap.atm_strike) // STEP
     line(f"Placing HEDGE order ATM{off:+d} ({h_r}) — strike (ATM {snap.atm_strike} {off:+d}×{STEP} = {h_k}) "
          f"qty {order.lot} (1 lot)")
-    line(f"Hedge order placed for 1 lot at ₹{h_ltp}   [PAPER order #P-0001]")
+    line(f"Hedge order placed for 1 lot at ₹{h_ltp}   [PAPER #P-0001 — live routing via Penguin = Phase 3]")
     line(f"Placing ATM SHORT order ATM ({s_r}) — strike (ATM {snap.atm_strike}) qty {order.lot} (1 lot)")
-    line(f"Short order placed for 1 lot at ₹{s_ltp}   [PAPER order #P-0002]")
+    line(f"Short order placed for 1 lot at ₹{s_ltp}   [PAPER #P-0002 — live routing via Penguin = Phase 3]")
     line(f"Entry complete — net credit ₹{order.net_credit:,.0f}, max loss ₹{order.max_loss:,.0f}. "
          f"Phase 1 stops here (no lifecycle).")
     print("---------------------------------------------")

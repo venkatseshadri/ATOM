@@ -1,12 +1,12 @@
 # ATOM Phase 1 — operator log (existing order)
-# generated: 2026-06-30T12:42:33Z UTC  commit: f267054
+# generated: 2026-06-30T12:47:56Z UTC  commit: a69b976
 # REAL: data/ATM/indicators/decision/strikes/premiums from Penguin (read-only)
-# MOCK/PAPER: Shoonya broker auth + order numbers (broker = Phase 3)
+# Broker: ONE Shoonya login = Penguin's; ATOM leverages it (no separate login). Phase 1 = no broker call.
 
 ---------------------------------------------
  1. Starting Trading module
- 2. Broker authentication successful — Shoonya            [PAPER/MOCK — broker = Phase 3]
- 3. Token obtained                                        [MOCK]
+ 2. Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)
+ 3. Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)
  4. Data flow validated — Penguin capture_nifty.sqlite (read-only), bar 2026-06-30T12:12:00
  5. NIFTY ATM is 23950   (spot ₹23,928.35, expiry 30-JUN-2026)
  6. Multi-TF candlesticks captured — OK
