@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, "src")
 
-from atom import phase1                   # noqa: E402
+from atom import config, phase1           # noqa: E402
 from atom.atom_state import AtomState     # noqa: E402
 from atom.penguin import PenguinReader, _f  # noqa: E402
 
@@ -59,8 +59,21 @@ def main() -> None:
         n += 1
         print(f"{n:2}. {msg}")
 
+    cfg = config.load_config()
+    phase1.configure(cfg)
+    show = ["strategy.wing.strikes", "strategy.lot.size", "risk.sl.pct",
+            "risk.deploy.inr", "expiry.rule", "regime.entry.min_confidence",
+            "regime.adx.trend_threshold", "indicator.ema.enabled",
+            "indicator.ema.lookback", "indicator.rsi.enabled", "indicator.rsi.bull",
+            "indicator.supertrend.enabled"]
+
     print("---------------------------------------------")
     line("Starting Trading module")
+    line("Loading trading configurations:")
+    for k in show:
+        v = "true" if cfg[k] is True else "false" if cfg[k] is False else cfg[k]
+        print(f"      {k}={v}")
+    print(f"      … ({len(cfg)} keys loaded from config/atom.conf)")
     line("Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)")
     line("Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)")
     line(f"Data flow validated — Penguin capture_nifty.sqlite (read-only), bar {snap.ts}")

@@ -118,3 +118,25 @@ def test_checkpoint_advances_cursor(tmp_path):
     run_once(reader, state, now=_now_at_bar(reader), max_stale_sec=1e9)
     _, last_bar_ts = state.load()
     assert last_bar_ts == reader.latest_snapshot().ts
+
+
+# ---- config (dotted-key trading configuration) ------------------------------
+
+def test_config_loads_and_coerces():
+    from atom import config
+    cfg = config.load_config()
+    assert cfg["strategy.wing.strikes"] == 4 and isinstance(cfg["strategy.wing.strikes"], int)
+    assert cfg["indicator.ema.enabled"] is True
+    assert isinstance(cfg["regime.entry.min_confidence"], float)
+
+
+def test_config_drives_wing(tmp_path):
+    from atom import config, phase1
+    p = tmp_path / "c.conf"
+    p.write_text("strategy.wing.strikes=2\nstrategy.lot.size=50\n")
+    phase1.configure(config.load_config(str(p)))
+    s = PenguinReader(FIX).latest_snapshot()
+    o = phase1.build_order("bear_call_spread", s)
+    assert o.lot == 50
+    assert abs(o.legs[0][1] - o.legs[1][1]) == 100   # wing = 2 strikes * 50
+    phase1.configure(config.load_config())           # restore defaults

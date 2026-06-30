@@ -1,17 +1,30 @@
 # ATOM Phase 1 — operator log (existing order)
-# generated: 2026-06-30T12:47:56Z UTC  commit: a69b976
-# REAL: data/ATM/indicators/decision/strikes/premiums from Penguin (read-only)
-# Broker: ONE Shoonya login = Penguin's; ATOM leverages it (no separate login). Phase 1 = no broker call.
+# generated: 2026-06-30T12:54:17Z UTC  commit: 8f33d05
+# config loaded from config/atom.conf (dotted keys); broker = Penguin's shared Shoonya login
 
 ---------------------------------------------
  1. Starting Trading module
- 2. Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)
- 3. Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)
- 4. Data flow validated — Penguin capture_nifty.sqlite (read-only), bar 2026-06-30T12:12:00
- 5. NIFTY ATM is 23950   (spot ₹23,928.35, expiry 30-JUN-2026)
- 6. Multi-TF candlesticks captured — OK
- 7. Indicator calculation — EMA-slope -1.32, RSI 31.34, ST mixed, ADX 23.22, IV 13.39, PCR 0.823 — successful   [consumed from Penguin]
- 8. Validating if existing orders exist
- 9. Existing order [bear_call_spread] taken at 2026-06-30T12:12:00 for net credit ₹1,980
-10. Skipping further flows (single position open)
+ 2. Loading trading configurations:
+      strategy.wing.strikes=4
+      strategy.lot.size=75
+      risk.sl.pct=35
+      risk.deploy.inr=200000
+      expiry.rule=current_week
+      regime.entry.min_confidence=0.45
+      regime.adx.trend_threshold=22
+      indicator.ema.enabled=true
+      indicator.ema.lookback=20
+      indicator.rsi.enabled=true
+      indicator.rsi.bull=55
+      indicator.supertrend.enabled=true
+      … (18 keys loaded from config/atom.conf)
+ 3. Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)
+ 4. Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)
+ 5. Data flow validated — Penguin capture_nifty.sqlite (read-only), bar 2026-06-30T12:12:00
+ 6. NIFTY ATM is 23950   (spot ₹23,928.35, expiry 30-JUN-2026)
+ 7. Multi-TF candlesticks captured — OK
+ 8. Indicator calculation — EMA-slope -1.32, RSI 31.34, ST mixed, ADX 23.22, IV 13.39, PCR 0.823 — successful   [consumed from Penguin]
+ 9. Validating if existing orders exist
+10. Existing order [bear_call_spread] taken at 2026-06-30T12:12:00 for net credit ₹1,980
+11. Skipping further flows (single position open)
 ---------------------------------------------

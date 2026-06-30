@@ -10,13 +10,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import config
 from .penguin import Snapshot, _f
 
-LOT = 75
-WING_STRIKES = 4           # hedge = ATM ± 4 strikes (NIFTY 50 step => ₹200 wing)
 STEP = 50
-ADX_TREND = 22.0           # trend-present gate
-CONF_ENTRY = 0.45          # min confidence to enter
+
+# active config (dotted keys) — overridable via configure(); defaults from config.py
+CFG = dict(config.DEFAULTS)
+
+
+def configure(cfg: dict) -> None:
+    CFG.clear()
+    CFG.update(cfg)
 
 
 # ---- 7-family regime (consensus over Penguin's enriched indicators) ----------
@@ -27,21 +32,27 @@ def seven_family_vote(ind: dict) -> dict:
     v = {}
     # 1 Trend — SuperTrend consensus
     stc = (ind.get("st_consensus") or ind.get("supertrend_direction") or "").lower()
-    v["trend"] = 1 if "bull" in stc else -1 if "bear" in stc else 0
-    # 2 Momentum — RSI
+    on = CFG.get("indicator.supertrend.enabled", True)
+    v["trend"] = (1 if "bull" in stc else -1 if "bear" in stc else 0) if on else 0
+    # 2 Momentum — RSI (thresholds from config)
     rsi = _f(ind.get("rsi"))
-    v["momentum"] = 0 if rsi is None else 1 if rsi >= 55 else -1 if rsi <= 45 else 0
+    bull, bear = CFG.get("indicator.rsi.bull", 55), CFG.get("indicator.rsi.bear", 45)
+    if rsi is None or not CFG.get("indicator.rsi.enabled", True):
+        v["momentum"] = 0
+    else:
+        v["momentum"] = 1 if rsi >= bull else -1 if rsi <= bear else 0
     # 3 Price-action — EMA20 slope
     slope = _f(ind.get("ema20_slope"))
     v["price_action"] = 0 if slope is None else 1 if slope > 0 else -1 if slope < 0 else 0
     # 4 Market structure — HH/HL bull, LH/LL bear
     st = (ind.get("structure_type") or "").upper()
-    v["structure"] = 1 if st in ("HH", "HL") else -1 if st in ("LH", "LL") else 0
+    on = CFG.get("indicator.structure.enabled", True)
+    v["structure"] = (1 if st in ("HH", "HL") else -1 if st in ("LH", "LL") else 0) if on else 0
     # 5 Options sentiment — PCR + sentiment tag (PCR<0.9 call-heavy ~ bullish lean)
     pcr = _f(ind.get("pcr_total"))
     sent = (ind.get("sentiment") or "").lower()
     sv = 0
-    if pcr is not None:
+    if pcr is not None and CFG.get("indicator.pcr.enabled", True):
         sv += 1 if pcr < 0.9 else -1 if pcr > 1.1 else 0
     sv += 1 if "bull" in sent else -1 if "bear" in sent else 0
     v["sentiment"] = 1 if sv > 0 else -1 if sv < 0 else 0
@@ -66,7 +77,7 @@ def classify_regime(ind: dict) -> tuple[str, float, dict, dict]:
     bear = sum(1 for k, v in votes.items() if k != "volatility" and v < 0)
     total = bull + bear
     strength = min(adx / 40.0, 1.0)            # directional mass from trend strength
-    if adx < ADX_TREND or total == 0:
+    if adx < CFG.get("regime.adx.trend_threshold", 22) or total == 0:
         # no trend strength → SIDEWAYS dominates regardless of vote lean
         p_side = 1.0 if total == 0 else 0.6
         p_up = 0.4 * bull / total if total else 0.0
@@ -89,7 +100,7 @@ def decide(fsm_state: str, regime: str, conf: float) -> tuple[str, str]:
     """(intent, structure). Phase 1 only opens with-trend on confirmed trend."""
     if fsm_state != "FLAT":
         return "SKIP", "single_position_open"          # already in a trade
-    if conf < CONF_ENTRY:
+    if conf < CFG.get("regime.entry.min_confidence", 0.45):
         return "STAND_DOWN", "low_confidence"
     if regime == "TREND_UP":
         return "OPEN", "bull_put_spread"
@@ -111,7 +122,8 @@ class PaperOrder:
 
 def build_order(structure: str, snap: Snapshot) -> PaperOrder | None:
     atm = snap.atm_strike
-    wing = WING_STRIKES * STEP
+    lot = CFG.get("strategy.lot.size", 75)
+    wing = CFG.get("strategy.wing.strikes", 4) * STEP
     if structure == "bull_put_spread":
         short_k, hedge_k, right = atm, atm - wing, "PE"
     elif structure == "bear_call_spread":
@@ -124,11 +136,11 @@ def build_order(structure: str, snap: Snapshot) -> PaperOrder | None:
         return None                                    # premiums unavailable → no fabrication
     short_ltp, hedge_ltp = sp["ltp"], hp["ltp"]
     credit_per = short_ltp - hedge_ltp
-    net_credit = round(credit_per * LOT, 2)
-    max_loss = round((wing - credit_per) * LOT, 2)
+    net_credit = round(credit_per * lot, 2)
+    max_loss = round((wing - credit_per) * lot, 2)
     # hedge leg placed FIRST (leg-in safety), then the short
     legs = (("BUY", hedge_k, right, hedge_ltp), ("SELL", short_k, right, short_ltp))
-    return PaperOrder(structure, legs, net_credit, max_loss, LOT)
+    return PaperOrder(structure, legs, net_credit, max_loss, lot)
 
 
 # ---- the cycle (pure): state + snapshot -> new_state, decision, paper_order ---
