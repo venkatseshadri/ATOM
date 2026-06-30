@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from . import phase1
+from . import lights, phase1
 from .atom_state import AtomState
 from .penguin import PenguinReader
 
@@ -49,6 +49,16 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
     state.checkpoint(new_state, snap.ts)
     if order is not None:
         state.record_paper_trade(now.isoformat(), snap.ts, order, decision)
+
+    # ATOM-Lights SHADOW — log every cycle for later P(profit|state); does NOT gate
+    shadow = None
+    if lights.CFG.get("lights.enabled", True):
+        try:
+            res = lights.evaluate(reader, snap.ind, snap.days_to_expiry)
+            shadow = lights.shadow_entry(res, decision["regime"])
+            state.record_lights_shadow(snap.ts, res, shadow, decision)
+        except Exception:
+            shadow = None
 
     return {"action": decision["intent"], "bar_ts": snap.ts, "spot": snap.spot,
             "atm": snap.atm_strike, "expiry": snap.expiry,

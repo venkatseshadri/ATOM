@@ -1,6 +1,6 @@
 # ATOM Phase 1 — operator log (existing order)
-# generated: 2026-06-30T12:54:17Z UTC  commit: 8f33d05
-# config loaded from config/atom.conf (dotted keys); broker = Penguin's shared Shoonya login
+# generated: 2026-06-30T15:44:36Z UTC  commit: c593b15
+# ATOM-Lights = SHADOW (logged, does not gate). multitf is STALE (Penguin 06-10) — mechanism shown, data flagged.
 
 ---------------------------------------------
  1. Starting Trading module
@@ -17,7 +17,7 @@
       indicator.rsi.enabled=true
       indicator.rsi.bull=55
       indicator.supertrend.enabled=true
-      … (18 keys loaded from config/atom.conf)
+      … (23 keys loaded from config/atom.conf)
  3. Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)
  4. Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)
  5. Data flow validated — Penguin capture_nifty.sqlite (read-only), bar 2026-06-30T12:12:00

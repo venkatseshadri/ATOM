@@ -19,6 +19,10 @@ class AtomState:
         c.execute("CREATE TABLE IF NOT EXISTS paper_trades "
                   "(ts TEXT, bar_ts TEXT, structure TEXT, net_credit REAL, max_loss REAL, "
                   "lot INTEGER, legs TEXT, regime TEXT, confidence REAL)")
+        c.execute("CREATE TABLE IF NOT EXISTS lights_shadow "
+                  "(bar_ts TEXT, lights TEXT, gap TEXT, permission TEXT, size TEXT, "
+                  "trigger INTEGER, family_dir TEXT, family_conf REAL, "
+                  "candidate_enter INTEGER, candidate_instrument TEXT, reason TEXT)")
         c.execute("INSERT OR IGNORE INTO atom_state(id,fsm_state,last_bar_ts) "
                   "VALUES(1,'FLAT',NULL)")
         c.commit(); c.close()
@@ -49,6 +53,17 @@ class AtomState:
             c.execute("UPDATE atom_state SET fsm_state=?, last_bar_ts=? WHERE id=1",
                       (fsm_state, last_bar_ts))
             c.commit()                      # atomic
+        finally:
+            c.close()
+
+    def record_lights_shadow(self, bar_ts: str, res, sh: dict, decision: dict) -> None:
+        c = self._c()
+        try:
+            c.execute("INSERT INTO lights_shadow VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      (bar_ts, json.dumps(res.lights), res.gap, res.permission, res.size,
+                       int(res.trigger), decision["regime"], decision["confidence"],
+                       int(sh["enter"]), sh.get("instrument"), sh["reason"]))
+            c.commit()
         finally:
             c.close()
 

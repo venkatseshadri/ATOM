@@ -26,6 +26,11 @@ DEFAULTS = {
     "indicator.india_vix.enabled": True,
     "indicator.pcr.enabled": True,
     "indicator.structure.enabled": True,
+    "lights.enabled": True,
+    "lights.shadow": True,
+    "lights.body.min_frac": 0.15,
+    "lights.gap.threshold_pct": 0.3,
+    "lights.time_gate": "10:15",
 }
 
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),

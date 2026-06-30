@@ -109,6 +109,26 @@ class PenguinReader:
                 out[(s, otype)] = {"ltp": _f(ltp), "oi": _f(oi)}
         return out
 
+    def multitf(self, tf: int, limit: int = 3) -> list[dict]:
+        """Newest-first candles for a timeframe (minutes) from market_data_multitf."""
+        c = self._connect()
+        try:
+            rows = c.execute(
+                "select timestamp,open,high,low,close from market_data_multitf "
+                "where timeframe_min=? and close is not null order by timestamp desc limit ?",
+                (tf, limit)).fetchall()
+            return [{"ts": r[0], "open": _f(r[1]), "high": _f(r[2]),
+                     "low": _f(r[3]), "close": _f(r[4])} for r in rows]
+        finally:
+            c.close()
+
+    def multitf_latest_ts(self) -> str | None:
+        c = self._connect()
+        try:
+            return c.execute("select max(timestamp) from market_data_multitf").fetchone()[0]
+        finally:
+            c.close()
+
     def option_ts(self) -> str | None:
         c = self._connect()
         try:

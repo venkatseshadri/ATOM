@@ -1,6 +1,6 @@
 # ATOM Phase 1 — operator log (fresh order)
-# generated: 2026-06-30T12:54:17Z UTC  commit: 8f33d05
-# config loaded from config/atom.conf (dotted keys); broker = Penguin's shared Shoonya login
+# generated: 2026-06-30T15:44:36Z UTC  commit: c593b15
+# ATOM-Lights = SHADOW (logged, does not gate). multitf is STALE (Penguin 06-10) — mechanism shown, data flagged.
 
 ---------------------------------------------
  1. Starting Trading module
@@ -17,7 +17,7 @@
       indicator.rsi.enabled=true
       indicator.rsi.bull=55
       indicator.supertrend.enabled=true
-      … (18 keys loaded from config/atom.conf)
+      … (23 keys loaded from config/atom.conf)
  3. Broker session — Shoonya, via Penguin's login (shared; ATOM does NOT log in separately)
  4. Session token — reused from Penguin (one broker login; Phase 1 makes no broker call)
  5. Data flow validated — Penguin capture_nifty.sqlite (read-only), bar 2026-06-30T12:05:00
@@ -26,13 +26,15 @@
  8. Indicator calculation — EMA-slope -1.24, RSI 45.41, ST mixed, ADX 34.91, IV 13.42, PCR 0.817 — successful   [consumed from Penguin]
  9. Validating if existing orders exist
 10. No existing orders exist
-11. Up probability        29%
-12. Down probability      58%
-13. Sideways probability  13%
-14. DecisionMaker — Down value wins (58%) → taking trending-down (bear call spread)
-15. Placing HEDGE order ATM+4 (CE) — strike (ATM 23950 +4×50 = 24150) qty 75 (1 lot)
-16. Hedge order placed for 1 lot at ₹2.95   [PAPER #P-0001 — live routing via Penguin = Phase 3]
-17. Placing ATM SHORT order ATM (CE) — strike (ATM 23950) qty 75 (1 lot)
-18. Short order placed for 1 lot at ₹36.5   [PAPER #P-0002 — live routing via Penguin = Phase 3]
-19. Entry complete — net credit ₹2,516, max loss ₹12,484. Phase 1 stops here (no lifecycle).
+11. 7-family direction — TREND_DOWN (conf 58%)  [Up 29% / Down 58% / Sideways 13%]
+12. ATOM-Lights traffic pattern — 5m🟡  15m🟡  30m🔴  60m🔴  240m🔴  1D🔴   Gap:GAP_NEUTRAL
+13.    60m PERMISSION = RED → CALL_CREDIT_SPREAD   | conviction/size MIN | trigger False
+14.    ATOM-Lights [SHADOW] AND-gate → no-enter  — no pullback→resumption trigger
+15.    (shadow: logged for P(profit|state); 7-family below still drives the paper order)
+16. DecisionMaker — Down value wins (58%) → taking trending-down (bear call spread)
+17. Placing HEDGE order ATM+4 (CE) — strike (ATM 23950 +4×50 = 24150) qty 75 (1 lot)
+18. Hedge order placed for 1 lot at ₹2.95   [PAPER #P-0001 — live routing via Penguin = Phase 3]
+19. Placing ATM SHORT order ATM (CE) — strike (ATM 23950) qty 75 (1 lot)
+20. Short order placed for 1 lot at ₹36.5   [PAPER #P-0002 — live routing via Penguin = Phase 3]
+21. Entry complete — net credit ₹2,516, max loss ₹12,484. Phase 1 stops here (no lifecycle).
 ---------------------------------------------

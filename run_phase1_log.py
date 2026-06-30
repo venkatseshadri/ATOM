@@ -12,9 +12,11 @@ import sys
 
 sys.path.insert(0, "src")
 
-from atom import config, phase1           # noqa: E402
+from atom import config, lights, phase1   # noqa: E402
 from atom.atom_state import AtomState     # noqa: E402
 from atom.penguin import PenguinReader, _f  # noqa: E402
+
+_DOT = {"GREEN": "🟢", "RED": "🔴", "AMBER": "🟡"}
 
 FIX = "tests/fixtures/capture_nifty_fixture.sqlite"
 STEP = 50
@@ -61,6 +63,7 @@ def main() -> None:
 
     cfg = config.load_config()
     phase1.configure(cfg)
+    lights.configure(cfg)
     show = ["strategy.wing.strikes", "strategy.lot.size", "risk.sl.pct",
             "risk.deploy.inr", "expiry.rule", "regime.entry.min_confidence",
             "regime.adx.trend_threshold", "indicator.ema.enabled",
@@ -94,9 +97,19 @@ def main() -> None:
 
     p = decision["probs"]
     line("No existing orders exist")
-    line(f"Up probability        {p['UP']*100:.0f}%")
-    line(f"Down probability      {p['DOWN']*100:.0f}%")
-    line(f"Sideways probability  {p['SIDEWAYS']*100:.0f}%")
+    line(f"7-family direction — {decision['regime']} (conf {decision['confidence']*100:.0f}%)  "
+         f"[Up {p['UP']*100:.0f}% / Down {p['DOWN']*100:.0f}% / Sideways {p['SIDEWAYS']*100:.0f}%]")
+
+    # --- ATOM-Lights layer (SHADOW — logged, does not gate yet) ---
+    res = lights.evaluate(reader, snap.ind, snap.days_to_expiry)
+    pat = "  ".join(f"{tf}{_DOT[res.lights[tf]]}" for tf in ("5m", "15m", "30m", "60m", "240m", "1D"))
+    line(f"ATOM-Lights traffic pattern — {pat}   Gap:{res.gap}")
+    line(f"   60m PERMISSION = {res.lights['60m']} → {res.permission}   "
+         f"| conviction/size {res.size} | trigger {res.trigger}")
+    sh = lights.shadow_entry(res, decision["regime"])
+    verdict = f"ENTER {sh['instrument']} (size {sh['size']})" if sh["enter"] else "no-enter"
+    line(f"   ATOM-Lights [SHADOW] AND-gate → {verdict}  — {sh['reason']}")
+    line(f"   (shadow: logged for P(profit|state); 7-family below still drives the paper order)")
 
     if not order:
         line(f"DecisionMaker — {decision['regime']} ({decision['confidence']*100:.0f}%) "
