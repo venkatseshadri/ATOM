@@ -40,6 +40,10 @@ def main() -> None:
 
     print(f"\nSCOUT  bar {r.get('bar_ts')}  spot ₹{r.get('spot')}  ATM {r.get('atm')}  "
           f"expiry {r.get('expiry')}")
+    ind = r.get("indicators")
+    if ind:
+        print(f"       IND  EMA-slope={ind['ema20_slope']} RSI={ind['rsi']} ST={ind['st_consensus']} "
+              f"ADX={ind['adx']} IV={ind['india_vix']} PCR={ind['pcr_total']}")
     if "votes" in r:
         print(f"       regime={r['regime']} conf={r['confidence']}  votes={r['votes']}")
     print(f"DECIDE intent={r['action']}  ({r.get('structure')})  fsm={r['fsm_state']}")

@@ -60,8 +60,10 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
         except Exception:
             shadow = None
 
+    ik = ("ema20_slope", "rsi", "st_consensus", "adx", "india_vix", "pcr_total")
     return {"action": decision["intent"], "bar_ts": snap.ts, "spot": snap.spot,
             "atm": snap.atm_strike, "expiry": snap.expiry,
             "regime": decision["regime"], "confidence": decision["confidence"],
             "probs": decision["probs"], "votes": decision["votes"],
+            "indicators": {k: snap.ind.get(k) for k in ik},
             "structure": decision["structure"], "order": order, "fsm_state": new_state}
