@@ -54,8 +54,34 @@ def main() -> None:
             print(f"         {action} {strike}{right} @ ₹{ltp}")
         print(f"       net credit ₹{order.net_credit:,.0f}  max loss ₹{order.max_loss:,.0f}  "
               f"lot {order.lot}")
+        if not fixture:
+            _append_order(r, order)
     else:
         print(f"       no order ({r.get('reason', r.get('structure'))})")
+
+
+def _append_order(r: dict, order) -> None:
+    """One row per attempted paper order → logs/atom_orders.csv (cumulative, for
+    Phase-1 validation). Live only; fixture runs don't pollute it."""
+    import csv
+    import os
+
+    path = "logs/atom_orders.csv"
+    os.makedirs("logs", exist_ok=True)
+    (h_act, h_k, h_r, h_ltp), (s_act, s_k, s_r, s_ltp) = order.legs
+    row = {
+        "placed_at": datetime.now().isoformat(timespec="seconds"),
+        "bar_ts": r["bar_ts"], "structure": order.structure,
+        "regime": r["regime"], "conf": r["confidence"],
+        "hedge": f"{h_act} {h_k}{h_r} @{h_ltp}", "short": f"{s_act} {s_k}{s_r} @{s_ltp}",
+        "net_credit": order.net_credit, "max_loss": order.max_loss, "lot": order.lot,
+    }
+    new = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(row))
+        if new:
+            w.writeheader()
+        w.writerow(row)
 
 
 if __name__ == "__main__":
