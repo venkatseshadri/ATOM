@@ -40,7 +40,8 @@ def main() -> None:
 
     if "explain" not in r:
         # early exit before a real cycle ran — no_data / no_new_bar / stale_feed
-        print(f"\n{r['action']} ({r.get('reason')})  bar={r.get('bar_ts')}  fsm={r['fsm_state']}")
+        age = f"  age={r['age_sec']}s (max {max_stale}s)" if "age_sec" in r else ""
+        print(f"\n{r['action']} ({r.get('reason')})  bar={r.get('bar_ts')}  fsm={r['fsm_state']}{age}")
         return
 
     RULE = "=" * 78
