@@ -15,7 +15,7 @@ DEFAULTS = {
     "risk.dd.floor.pct": 10,
     "expiry.rule": "current_week",
     "regime.entry.min_confidence": 0.45,
-    "regime.adx.trend_threshold": 22,
+    "regime.adx.ramp_cap": 40,
     "indicator.ema.enabled": True,
     "indicator.ema.lookback": 20,
     "indicator.rsi.enabled": True,

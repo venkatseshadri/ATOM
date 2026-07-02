@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 # enriched columns ATOM consumes (regime + instrument)
 ENRICHED_COLS = [
     "timestamp", "instrument", "spot", "atm_strike", "expiry_weekly", "days_to_weekly",
-    "supertrend_direction", "st_consensus", "adx", "rsi", "ema20_slope", "india_vix",
+    "supertrend_direction", "st_consensus", "st_5min_direction", "st_15min_direction",
+    "adx", "rsi", "ema20_slope", "india_vix",
     "iv_rank", "bb_width", "vwap", "structure_type", "pcr_total", "pcr_atm", "oi_skew",
     "sentiment", "gap_pct", "session_phase",
 ]
@@ -66,9 +67,27 @@ class PenguinReader:
         step = 50  # NIFTY
         strikes = [atm + step * k for k in range(-strike_window, strike_window + 1)]
         chain = self._option_chain(c, expiry, strikes)
+        ind = dict(ind)
+        ind.update(self._structure_bars(c, ind["instrument"], ind["timestamp"]))
         return Snapshot(ts=ind["timestamp"], spot=_f(ind["spot"]) or 0.0, atm_strike=atm,
                         expiry=expiry, days_to_expiry=int(_f(ind["days_to_weekly"]) or 0),
                         ind=ind, chain=chain)
+
+    def _structure_bars(self, c, instrument: str, ts: str) -> dict:
+        """Raw 1-min high/low for the bar and the one before it — the exact two
+        candles structure_type's HH/LL call is based on. For log transparency only,
+        does not feed the vote (structure_type already carries the decision)."""
+        try:
+            rows = c.execute(
+                "select timestamp, high, low from market_data where instrument = ? "
+                "and timestamp <= ? order by timestamp desc limit 2", (instrument, ts)).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        if len(rows) < 2:
+            return {"struct_cur": None, "struct_prev": None}
+        (cur_ts, cur_h, cur_l), (prev_ts, prev_h, prev_l) = rows
+        return {"struct_cur": (cur_ts, _f(cur_h), _f(cur_l)),
+                "struct_prev": (prev_ts, _f(prev_h), _f(prev_l))}
 
     def latest_snapshot(self, strike_window: int = 6) -> Snapshot | None:
         c = self._connect()

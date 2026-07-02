@@ -51,19 +51,35 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
         state.record_paper_trade(now.isoformat(), snap.ts, order, decision)
 
     # ATOM-Lights SHADOW — log every cycle for later P(profit|state); does NOT gate
-    shadow = None
+    shadow, res = None, None
     if lights.CFG.get("lights.enabled", True):
         try:
             res = lights.evaluate(reader, snap.ind, snap.days_to_expiry)
             shadow = lights.shadow_entry(res, decision["regime"])
             state.record_lights_shadow(snap.ts, res, shadow, decision)
         except Exception:
-            shadow = None
+            shadow, res = None, None
 
-    ik = ("ema20_slope", "rsi", "st_consensus", "adx", "india_vix", "pcr_total")
+    ik = ("ema20_slope", "rsi", "st_consensus", "st_5min_direction", "st_15min_direction",
+          "adx", "india_vix", "pcr_total", "sentiment", "structure_type", "vwap", "spot")
     return {"action": decision["intent"], "bar_ts": snap.ts, "spot": snap.spot,
             "atm": snap.atm_strike, "expiry": snap.expiry,
             "regime": decision["regime"], "confidence": decision["confidence"],
             "probs": decision["probs"], "votes": decision["votes"],
+            "basis": phase1.branch_scores(snap.ind),
+            "explain": {
+                "votes": phase1.explain_votes(snap.ind, decision["votes"]),
+                "regime": phase1.explain_regime(snap.ind, decision["votes"], decision["probs"]),
+                "decision": phase1.explain_decision(fsm_state, decision["regime"],
+                                                      decision["confidence"]),
+                "fsm_meaning": phase1.FSM_MEANING.get(new_state, new_state),
+                "open_position": state.last_open_position() if fsm_state != "FLAT" else None,
+            },
+            "lights": None if res is None else {
+                "lights": res.lights, "gap": res.gap, "permission": res.permission,
+                "size": res.size, "trigger": res.trigger,
+                "shadow_enter": shadow["enter"] if shadow else None,
+                "shadow_reason": shadow["reason"] if shadow else None,
+                "conviction_note": res.conviction_note},
             "indicators": {k: snap.ind.get(k) for k in ik},
             "structure": decision["structure"], "order": order, "fsm_state": new_state}

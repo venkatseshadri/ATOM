@@ -67,6 +67,24 @@ class AtomState:
         finally:
             c.close()
 
+    def last_open_position(self) -> dict | None:
+        """Most recent paper trade — for log display when fsm != FLAT (which trade is
+        blocking new entries). Not a claim it's still open; Phase 1 has no exit, so the
+        latest row IS the open position whenever fsm_state is SINGLE_SPREAD."""
+        c = self._c()
+        try:
+            row = c.execute(
+                "select ts, bar_ts, structure, net_credit, max_loss, lot, legs "
+                "from paper_trades order by ts desc limit 1").fetchone()
+            if not row:
+                return None
+            ts, bar_ts, structure, net_credit, max_loss, lot, legs = row
+            return {"ts": ts, "bar_ts": bar_ts, "structure": structure,
+                    "net_credit": net_credit, "max_loss": max_loss, "lot": lot,
+                    "legs": json.loads(legs)}
+        finally:
+            c.close()
+
     def record_paper_trade(self, now: str, bar_ts: str, order, decision: dict) -> None:
         c = self._c()
         try:

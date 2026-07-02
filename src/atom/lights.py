@@ -95,6 +95,7 @@ class LightsResult:
     size: str             # FULL | MIN | SKIP
     trigger: bool         # pullback→resumption present
     pullback_swing_low: float | None
+    conviction_note: str | None = None   # log-only caveat, does not change size/gating
 
 
 def _permission(c60: str) -> str:
@@ -135,4 +136,23 @@ def evaluate(reader: PenguinReader, ind: dict, dte: int) -> LightsResult:
     if gap == "GAP_UP_FADED":                    # exhaustion veto
         trig = False
     swing = _f(ind.get("swing_low"))
-    return LightsResult(lights, gap, perm, size, trig, swing)
+    note = _conviction_note(cnd.get(240, []))
+    return LightsResult(lights, gap, perm, size, trig, swing, note)
+
+
+def _conviction_note(c240: list[dict]) -> str | None:
+    """NIFTY's ~6.25hr session fits well under two 240m buckets, so for most of every
+    session the 'current vs previous 240m candle' comparison that feeds CONVICTION
+    sizing is actually comparing today against YESTERDAY's candle, not an intraday
+    signal. Log-only flag — does not change size/gating (Board discussion 2026-07-02)."""
+    if len(c240) < 2:
+        return None
+    cur_ts, prev_ts = c240[0].get("ts"), c240[1].get("ts")
+    if not cur_ts or not prev_ts:
+        return None
+    if cur_ts[:10] != prev_ts[:10]:
+        return (f"240m conviction candle is comparing TODAY ({cur_ts[:10]}) vs "
+                f"YESTERDAY ({prev_ts[:10]}) — NIFTY's session is too short for two "
+                "same-day 240m candles this early; conviction size is a multi-day "
+                "filter right now, not intraday")
+    return None

@@ -67,21 +67,20 @@ def seven_family_vote(ind: dict) -> dict:
 def classify_regime(ind: dict) -> tuple[str, float, dict, dict]:
     """Return (label, confidence, probs{UP,DOWN,SIDEWAYS}, votes).
 
-    Three-way probability: ADX gives trend *strength* (directional mass); the rest is
-    sideways mass. Within the directional mass, bull/bear split by the family votes.
-    DecisionMaker = argmax(probs). (Defaults ‹TBD›; research-loop tunes.)
+    Three-way probability: ADX gives trend *strength* (directional mass) via a smooth
+    ramp `min(ADX/ramp_cap, 1)` — no threshold cliff. The rest is sideways mass. Within
+    the directional mass, bull/bear split by the family votes. DecisionMaker =
+    argmax(probs). (Defaults ‹TBD›; research-loop tunes.)
     """
     votes = seven_family_vote(ind)
     adx = _f(ind.get("adx")) or 0.0
     bull = sum(1 for k, v in votes.items() if k != "volatility" and v > 0)
     bear = sum(1 for k, v in votes.items() if k != "volatility" and v < 0)
     total = bull + bear
-    strength = min(adx / 40.0, 1.0)            # directional mass from trend strength
-    if adx < CFG.get("regime.adx.trend_threshold", 22) or total == 0:
-        # no trend strength → SIDEWAYS dominates regardless of vote lean
-        p_side = 1.0 if total == 0 else 0.6
-        p_up = 0.4 * bull / total if total else 0.0
-        p_down = 0.4 * bear / total if total else 0.0
+    ramp_cap = CFG.get("regime.adx.ramp_cap", 40)
+    strength = min(adx / ramp_cap, 1.0) if ramp_cap else 1.0
+    if total == 0:
+        p_up, p_down, p_side = 0.0, 0.0, 1.0
     else:
         p_up = strength * bull / total
         p_down = strength * bear / total
@@ -112,6 +111,140 @@ def family_view(votes: dict) -> list[tuple[str, str]]:
     return [(FAMILY_NAMES[k], word[votes.get(k, 0)]) for k in FAMILY_NAMES]
 
 
+FSM_MEANING = {
+    "FLAT": "no position open — eligible to enter",
+    "SINGLE_SPREAD": "one credit spread open — Phase 1 has no exit/SL/TP/EOD-close, "
+                      "so new entries stay blocked until Phase 3 closes it",
+}
+
+
+def explain_votes(ind: dict, votes: dict) -> list[str]:
+    """One line per family: raw indicator value(s), the threshold applied, the vote.
+    Mirrors seven_family_vote()'s logic exactly — for the operator log, not re-decided."""
+    stc = (ind.get("st_consensus") or ind.get("supertrend_direction") or "None")
+    rsi, slope = ind.get("rsi"), ind.get("ema20_slope")
+    r_bull, r_bear = CFG.get("indicator.rsi.bull", 55), CFG.get("indicator.rsi.bear", 45)
+    st = ind.get("structure_type") or "None"
+    pcr, sent = ind.get("pcr_total"), ind.get("sentiment") or "None"
+    vwap, spot = ind.get("vwap"), ind.get("spot")
+    cur, prev = ind.get("struct_cur"), ind.get("struct_prev")
+    if cur and prev:
+        (c_ts, c_h, c_l), (p_ts, p_h, p_l) = cur, prev
+        struct_basis = (f"  ({c_ts[11:16]} h={c_h} l={c_l}  vs  {p_ts[11:16]} h={p_h} l={p_l}"
+                         f" [1min bars]: high{'<' if c_h < p_h else '>='}prev & "
+                         f"low{'<' if c_l < p_l else '>='}prev)")
+    else:
+        struct_basis = "  (insufficient bar history)"
+    return [
+        f"  Trend        SuperTrend consensus(5m+15m)={stc}"
+        f" [bull->+1 / bear->-1]                     -> vote {votes['trend']:+d}",
+        f"  Momentum     RSI-14={rsi}"
+        f" [>={r_bull} bull / <={r_bear} bear]                     -> vote {votes['momentum']:+d}",
+        f"  Price-action EMA20 slope={slope}"
+        f" [>0 bull / <0 bear]                                -> vote {votes['price_action']:+d}",
+        f"  Structure    swing structure_type={st}"
+        f" [HH/HL bull / LH/LL bear]                     -> vote {votes['structure']:+d}"
+        f"{struct_basis}",
+        f"  Sentiment    PCR-total={pcr} tag={sent}"
+        f" [PCR<0.9 bull / >1.1 bear, blended w/ tag]  -> vote {votes['sentiment']:+d}",
+        f"  Participation spot={spot} vs VWAP={vwap}"
+        f" [spot>=VWAP bull / else bear]               -> vote {votes['participation']:+d}",
+        "  Volatility   non-directional — informs confidence strength only,"
+        " never votes         -> vote  0",
+        _vote_rollup(votes),
+    ]
+
+
+def _vote_rollup(votes: dict) -> str:
+    bull = sum(1 for k, v in votes.items() if k != "volatility" and v > 0)
+    bear = sum(1 for k, v in votes.items() if k != "volatility" and v < 0)
+    neutral = 6 - bull - bear
+    net = sum(v for k, v in votes.items() if k != "volatility")
+    return (f"  => TOTAL  bull={bull}  bear={bear}  neutral={neutral}  "
+            f"(of 6 directional families)  net={net:+d}")
+
+
+def explain_regime(ind: dict, votes: dict, probs: dict) -> str:
+    """Plain-language walkthrough of classify_regime()'s arithmetic — turns the vote
+    count into a probability, weighted by how strongly ADX says the market is trending.
+    Smooth ramp, no cliff: strength scales continuously with ADX/ramp_cap."""
+    adx = _f(ind.get("adx")) or 0.0
+    ramp_cap = CFG.get("regime.adx.ramp_cap", 40)
+    bull = sum(1 for k, v in votes.items() if k != "volatility" and v > 0)
+    bear = sum(1 for k, v in votes.items() if k != "volatility" and v < 0)
+    total = bull + bear
+    if total == 0:
+        return ("  Step A — no family voted a direction at all (bull=0, bear=0), so\n"
+                 f"           there's nothing to weight by trend strength (ADX={adx} is moot).\n"
+                 "  => SIDEWAYS by default (100%) — this is the only case that bypasses ADX.")
+    strength = round(min(adx / ramp_cap, 1.0), 3)
+    p_up, p_down, p_side = strength * bull / total, strength * bear / total, 1 - strength
+    trend_word = "strongly trending" if strength >= 0.8 else \
+        "moderately trending" if strength >= 0.4 else "weak/choppy"
+    return (
+        "  Step A — how strongly is the market trending right now? (0=flat/choppy, ADX>=ramp_cap=fully trending)\n"
+        f"    ADX={adx}, ramp_cap={ramp_cap}  ->  trend-strength = min(ADX/ramp_cap, 1) "
+        f"= min({adx}/{ramp_cap}, 1) = {strength}  ({trend_word})\n"
+        "  Step B — split that trend-strength across the vote lean (from the TOTAL line above)\n"
+        f"    {bull} of {total} directional votes were bullish, {bear} were bearish\n"
+        f"    P(UP)   = trend-strength * bull/total = {strength} * {bull}/{total} = {round(p_up, 3)}\n"
+        f"    P(DOWN) = trend-strength * bear/total = {strength} * {bear}/{total} = {round(p_down, 3)}\n"
+        f"    P(SIDEWAYS) = 1 - trend-strength = 1 - {strength} = {round(p_side, 3)}"
+        "  (mass left over when the market isn't trending enough to call)\n"
+        "  Step C — normalise to guard rounding (should already sum to ~1.0)\n"
+        f"    -> UP={probs['UP']}  DOWN={probs['DOWN']}  SIDEWAYS={probs['SIDEWAYS']}")
+
+
+def explain_decision(fsm_state: str, regime: str, conf: float) -> str:
+    """Full decision-tree walkthrough of decide() — every branch it checks, in the exact
+    order it checks them, marking which one actually fired (x) vs never reached (skipped
+    because an earlier branch already returned)."""
+    thr = CFG.get("regime.entry.min_confidence", 0.45)
+    lines = ["  decide() checks these in order, stops at the first match:"]
+
+    b1 = fsm_state != "FLAT"
+    lines.append(f"   [{'x' if b1 else ' '}] 1. Is a position already open? (fsm={fsm_state} != FLAT) "
+                 f"-> {b1}")
+    if b1:
+        lines.append("        => STOPS HERE: SKIP (single_position_open)")
+        lines.append("   [-] 2. confidence < min_confidence?         not reached")
+        lines.append("   [-] 3. regime == TREND_UP?                  not reached")
+        lines.append("   [-] 4. regime == TREND_DOWN?                not reached")
+        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        lines.append(f"  => regime={regime} confidence={conf} computed in Step 3 above, "
+                      "but NEVER USED — branch 1 already decided the outcome")
+        return "\n".join(lines)
+
+    b2 = conf < thr
+    lines.append(f"   [{'x' if b2 else ' '}] 2. Is confidence < min_confidence? "
+                 f"({conf} < {thr}) -> {b2}")
+    if b2:
+        lines.append("        => STOPS HERE: STAND_DOWN (low_confidence)")
+        lines.append("   [-] 3. regime == TREND_UP?                  not reached")
+        lines.append("   [-] 4. regime == TREND_DOWN?                not reached")
+        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        return "\n".join(lines)
+
+    b3 = regime == "TREND_UP"
+    lines.append(f"   [{'x' if b3 else ' '}] 3. Is regime == TREND_UP? -> {b3}")
+    if b3:
+        lines.append("        => STOPS HERE: OPEN bull_put_spread")
+        lines.append("   [-] 4. regime == TREND_DOWN?                not reached")
+        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        return "\n".join(lines)
+
+    b4 = regime == "TREND_DOWN"
+    lines.append(f"   [{'x' if b4 else ' '}] 4. Is regime == TREND_DOWN? -> {b4}")
+    if b4:
+        lines.append("        => STOPS HERE: OPEN bear_call_spread")
+        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        return "\n".join(lines)
+
+    lines.append(f"   [x] 5. else (regime={regime}, neither UP nor DOWN survived) -> True")
+    lines.append(f"        => STOPS HERE: STAND_DOWN ({regime.lower()})")
+    return "\n".join(lines)
+
+
 def branch_scores(ind: dict) -> dict:
     """Anti-bias three-way DecisionMaker view. Each branch = a 'permission' the market
     has NOT invalidated:
@@ -123,16 +256,18 @@ def branch_scores(ind: dict) -> dict:
     Mapping (NotDown↔up) is one constant — flip if the desk wants the inverse label.
     """
     _, _, probs, votes = classify_regime(ind)
-    bull = sum(1 for k, v in votes.items() if k != "volatility" and v > 0)
-    bear = sum(1 for k, v in votes.items() if k != "volatility" and v < 0)
-    neutral = 6 - bull - bear
+    directional = {k: v for k, v in votes.items() if k != "volatility"}
+    bull_names = [FAMILY_NAMES[k] for k, v in directional.items() if v > 0]
+    bear_names = [FAMILY_NAMES[k] for k, v in directional.items() if v < 0]
+    neutral_names = [FAMILY_NAMES[k] for k, v in directional.items() if v == 0]
+    bull, bear, neutral = len(bull_names), len(bear_names), len(neutral_names)
     return {
         "NotDown": {"value": bull, "prob": probs["UP"], "regime": "TREND_UP",
-                    "trade": "trending-up (bull put spread)"},
+                    "trade": "trending-up (bull put spread)", "families": bull_names},
         "NotUp": {"value": bear, "prob": probs["DOWN"], "regime": "TREND_DOWN",
-                  "trade": "trending-down (bear call spread)"},
+                  "trade": "trending-down (bear call spread)", "families": bear_names},
         "Sideways": {"value": neutral, "prob": probs["SIDEWAYS"], "regime": "SIDEWAYS",
-                     "trade": "no-trade (sideways)"},
+                     "trade": "no-trade (sideways)", "families": neutral_names},
     }
 
 
