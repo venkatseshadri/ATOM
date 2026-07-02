@@ -209,12 +209,25 @@ def _tie_note(probs: dict) -> str:
     return f"clear winner: {tied[0]} at {best} (no tie)"
 
 
-def explain_decision(fsm_state: str, regime: str, conf: float) -> str:
+def explain_decision(fsm_state: str, regime: str, conf: float,
+                      final_intent: str | None = None) -> str:
     """Full decision-tree walkthrough of decide() — every branch it checks, in the exact
     order it checks them, marking which one actually fired (x) vs never reached (skipped
-    because an earlier branch already returned)."""
+    because an earlier branch already returned).
+
+    decide() itself only ever says OPEN/SKIP/STAND_DOWN — but cycle() can still overrule
+    an OPEN afterward if build_order() finds no real premium (STAND_DOWN premiums_
+    unavailable). Pass the real post-cycle intent so that override is visible here
+    instead of silently contradicting the RESULT line at the bottom of the log."""
     thr = CFG.get("regime.entry.min_confidence", 0.45)
     lines = ["  decide() checks these in order, stops at the first match:"]
+
+    def _construction_note(would_open: str) -> str:
+        if final_intent is not None and final_intent != "OPEN":
+            return (f"\n  => OVERRULED after decide(): build_order() found no real "
+                    f"premium for {would_open} -> final result is "
+                    f"{final_intent} (premiums_unavailable), not the OPEN shown above")
+        return ""
 
     b1 = fsm_state != "FLAT"
     lines.append(f"   [{'x' if b1 else ' '}] 1. Is a position already open? (fsm={fsm_state} != FLAT) "
@@ -245,14 +258,14 @@ def explain_decision(fsm_state: str, regime: str, conf: float) -> str:
         lines.append("        => STOPS HERE: OPEN bull_put_spread")
         lines.append("   [-] 4. regime == TREND_DOWN?                not reached")
         lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
-        return "\n".join(lines)
+        return "\n".join(lines) + _construction_note("bull_put_spread")
 
     b4 = regime == "TREND_DOWN"
     lines.append(f"   [{'x' if b4 else ' '}] 4. Is regime == TREND_DOWN? -> {b4}")
     if b4:
         lines.append("        => STOPS HERE: OPEN bear_call_spread")
         lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
-        return "\n".join(lines)
+        return "\n".join(lines) + _construction_note("bear_call_spread")
 
     lines.append(f"   [x] 5. else (regime={regime}, neither UP nor DOWN survived) -> True")
     lines.append(f"        => STOPS HERE: STAND_DOWN ({regime.lower()})")
