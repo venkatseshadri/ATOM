@@ -105,6 +105,28 @@ def test_run_once_enters_then_skips(tmp_path):
     assert r2["action"] == "NO_OP" and r2["reason"] == "no_new_bar"
 
 
+def test_replay_same_bar_does_not_duplicate_order(tmp_path):
+    """A real OPEN, replayed on the identical bar, must not double-write paper_trades
+    or re-fire the FSM transition — no_new_bar has to short-circuit before decide()."""
+    phase1.configure({**phase1.config.DEFAULTS, "regime.entry.min_confidence": 0.0})
+    try:
+        reader = PenguinReader(FIX)
+        state = AtomState(str(tmp_path / "s.sqlite"))
+        now = _now_at_bar(reader)
+        r1 = run_once(reader, state, now=now, max_stale_sec=1e9)
+        assert r1["action"] == "OPEN"
+        n1 = state._c().execute("select count(*) from paper_trades").fetchone()[0]
+        assert n1 == 1
+
+        r2 = run_once(reader, state, now=now, max_stale_sec=1e9)
+        assert r2["action"] == "NO_OP" and r2["reason"] == "no_new_bar"
+        n2 = state._c().execute("select count(*) from paper_trades").fetchone()[0]
+        assert n2 == 1                          # unchanged, no duplicate
+        assert state.load() == ("SINGLE_SPREAD", now.isoformat())
+    finally:
+        phase1.configure(dict(phase1.config.DEFAULTS))
+
+
 def test_stale_feed_stands_down(tmp_path):
     reader = PenguinReader(FIX)
     state = AtomState(str(tmp_path / "s.sqlite"))
