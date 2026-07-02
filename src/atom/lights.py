@@ -103,11 +103,17 @@ def _permission(c60: str) -> str:
 
 
 def _conviction(c240: str, c1d: str, dte: int) -> str:
-    greens = (c240 == "GREEN") + (c1d == "GREEN" if dte > 0 else c240 == "GREEN")
-    reds = (c240 == "RED") + (c1d == "RED" if dte > 0 else c240 == "RED")
-    if reds:
+    """FULL needs a clean, unanimous read. On dte==0 there's no time for the daily
+    candle to matter, so conviction is c240 alone — checked once, not counted twice
+    dressed up as '2 signals agreed' (that was the old bug: same output, but the
+    greens==2 check made it look like an independent second confirmation existed)."""
+    if dte == 0:
+        if c240 == "RED":
+            return "MIN"
+        return "FULL" if c240 == "GREEN" else "MIN"
+    if c240 == "RED" or c1d == "RED":
         return "MIN"
-    return "FULL" if greens == 2 else "MIN"
+    return "FULL" if c240 == "GREEN" and c1d == "GREEN" else "MIN"
 
 
 def _trigger(c5_hist: list[str], c15: str, permission: str) -> bool:

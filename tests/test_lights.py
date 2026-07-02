@@ -29,6 +29,22 @@ def test_permission_routing():
     assert lights._permission("AMBER") == "IRON_FLY"
 
 
+def test_conviction_multi_day_needs_both_green():
+    assert lights._conviction("GREEN", "GREEN", dte=3) == "FULL"
+    assert lights._conviction("GREEN", "AMBER", dte=3) == "MIN"   # only one confirms
+    assert lights._conviction("GREEN", "RED", dte=3) == "MIN"     # disagreement
+    assert lights._conviction("RED", "RED", dte=3) == "MIN"
+
+
+def test_conviction_0dte_uses_only_240m():
+    """dte==0: no time for the daily candle to matter — c240 alone decides. Was
+    previously implemented as counting c240 twice to fake a '2 signals' check;
+    same output, this locks in that c1d truly can't override it on 0DTE."""
+    assert lights._conviction("GREEN", "RED", dte=0) == "FULL"   # c1d ignored
+    assert lights._conviction("RED", "GREEN", dte=0) == "MIN"    # c1d ignored
+    assert lights._conviction("AMBER", "GREEN", dte=0) == "MIN"
+
+
 def test_trigger_requires_pullback_then_resumption():
     # bullish: prev 5m RED (dip) then cur 5m GREEN (resume) → trigger
     assert lights._trigger(["GREEN", "RED"], "GREEN", "PUT_CREDIT_SPREAD") is True
