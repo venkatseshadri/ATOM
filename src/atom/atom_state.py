@@ -46,13 +46,24 @@ class AtomState:
         finally:
             c.close()
 
-    def checkpoint(self, fsm_state: str, last_bar_ts: str) -> None:
+    def checkpoint_and_record(self, fsm_state: str, last_bar_ts: str, order,
+                               now: str, decision: dict) -> None:
+        """Checkpoint the FSM cursor and (if present) record the paper trade in ONE
+        transaction. These used to be two separate connections/commits, which left a
+        crash window where fsm_state could flip to SINGLE_SPREAD with zero matching
+        paper_trades row — a permanently stuck FSM with no visible position,
+        unrecoverable except by manual DB edit."""
         c = self._c()
         try:
             c.execute("BEGIN")
             c.execute("UPDATE atom_state SET fsm_state=?, last_bar_ts=? WHERE id=1",
                       (fsm_state, last_bar_ts))
-            c.commit()                      # atomic
+            if order is not None:
+                c.execute("INSERT INTO paper_trades VALUES(?,?,?,?,?,?,?,?,?)",
+                          (now, last_bar_ts, order.structure, order.net_credit,
+                           order.max_loss, order.lot, json.dumps(order.legs),
+                           decision["regime"], decision["confidence"]))
+            c.commit()
         finally:
             c.close()
 
@@ -85,13 +96,3 @@ class AtomState:
         finally:
             c.close()
 
-    def record_paper_trade(self, now: str, bar_ts: str, order, decision: dict) -> None:
-        c = self._c()
-        try:
-            c.execute("INSERT INTO paper_trades VALUES(?,?,?,?,?,?,?,?,?)",
-                      (now, bar_ts, order.structure, order.net_credit, order.max_loss,
-                       order.lot, json.dumps(order.legs), decision["regime"],
-                       decision["confidence"]))
-            c.commit()
-        finally:
-            c.close()

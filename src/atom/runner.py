@@ -46,9 +46,7 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
 
     new_state, decision, order = phase1.cycle(fsm_state, snap)
 
-    state.checkpoint(new_state, snap.ts)
-    if order is not None:
-        state.record_paper_trade(now.isoformat(), snap.ts, order, decision)
+    state.checkpoint_and_record(new_state, snap.ts, order, now.isoformat(), decision)
 
     # ATOM-Lights SHADOW — log every cycle for later P(profit|state); does NOT gate
     shadow, res = None, None

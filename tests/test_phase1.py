@@ -127,6 +127,25 @@ def test_replay_same_bar_does_not_duplicate_order(tmp_path):
         phase1.configure(dict(phase1.config.DEFAULTS))
 
 
+def test_checkpoint_and_trade_land_in_one_transaction(tmp_path):
+    """fsm_state and the paper_trades row for an OPEN must never be visible apart —
+    checkpoint() and record_paper_trade() used to be two separate connections/commits,
+    which left a crash window producing fsm=SINGLE_SPREAD with no matching trade row."""
+    phase1.configure({**phase1.config.DEFAULTS, "regime.entry.min_confidence": 0.0})
+    try:
+        reader = PenguinReader(FIX)
+        state = AtomState(str(tmp_path / "s.sqlite"))
+        r = run_once(reader, state, now=_now_at_bar(reader), max_stale_sec=1e9)
+        assert r["action"] == "OPEN"
+        fsm_state, _ = state.load()
+        n = state._c().execute("select count(*) from paper_trades").fetchone()[0]
+        # if these ever disagree, the atomic transaction broke
+        assert (fsm_state == "SINGLE_SPREAD") == (n == 1)
+        assert fsm_state == "SINGLE_SPREAD" and n == 1
+    finally:
+        phase1.configure(dict(phase1.config.DEFAULTS))
+
+
 def test_stale_feed_stands_down(tmp_path):
     reader = PenguinReader(FIX)
     state = AtomState(str(tmp_path / "s.sqlite"))
