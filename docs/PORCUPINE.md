@@ -12,29 +12,43 @@ scenario tape → run → assert → green/red. If true reuse is ever wanted, ad
 that maps a PORCUPINE driver onto ATOM's `Orchestrator` — the seam is `run_scenario`.
 
 ## Pieces
-- `src/atom/scenarios.py` — scenario tapes + `Expect` blocks (end state, P&L sign, FSM
-  state path, exit reason).
-- `src/atom/harness.py` — runs a scenario, reads telemetry, checks the `Expect`, plus a
-  global invariant (every day ends FLAT — no overnight risk).
-- `run_harness.py` — runs all scenarios, prints + writes `logs/harness.log`, exits non-zero
-  on any failure (CI-ready).
-- `tests/test_harness.py` — the harness must stay green.
+- `src/atom/scenarios.py` — Phase-0 skeleton scenario tapes + `Expect` blocks (end state,
+  P&L sign, FSM state path, exit reason). Scripted — these exercise a morph/hold/exit
+  lifecycle that isn't built in real code yet (Phase 3+).
+- `src/atom/harness.py` — runs a Phase-0 scenario through `Orchestrator`, reads telemetry,
+  checks the `Expect`, plus a global invariant (every day ends FLAT — no overnight risk).
+- `run_harness.py` — runs all Phase-0 scenarios, prints + writes `logs/harness.log`.
+- `tests/test_harness.py` — the Phase-0 harness must stay green.
+
+- `src/atom/scenarios_phase1.py` — **real-pipeline** scenarios (added 2026-07-02, GATE 1
+  review). Drives `runner.run_once()` directly against the shared fixture DB with targeted
+  config/state forcing — not the `Orchestrator`/`modules/` skeleton, which forked away
+  from the real `phase1.py` implementation and was never reconciled (see file docstring).
+- `src/atom/harness_phase1.py` — runs a Phase-1 scenario, asserts action/reason/regime/
+  fsm_state/paper_trades against the real output.
+- `run_harness_phase1.py` — runs all Phase-1 scenarios, prints + writes
+  `logs/harness_phase1.log`.
+- `tests/test_harness_phase1.py` — the Phase-1 harness must stay green.
 
 ## Run
 ```bash
-python3 run_harness.py     # report to stdout + logs/harness.log
-python3 -m pytest          # includes the harness
+python3 run_harness.py            # Phase-0 skeleton: report to stdout + logs/harness.log
+python3 run_harness_phase1.py     # Phase-1 real pipeline: stdout + logs/harness_phase1.log
+python3 -m pytest                 # includes both harnesses
 ```
 
 ## How it grows with the build
 Phase 0 drives the walking skeleton (scripted tapes); the harness already locks the
-state machine, exit paths, P&L direction, and the no-overnight invariant. As modules turn
-MOCK → REAL (see the legend printed in each report), **add to the same harness**:
-- **Phase 1** — feed a replay/fixture market stream; assert regime labels + FSM decisions.
+state machine, exit paths, P&L direction, and the no-overnight invariant. Phase 1 is now
+covered by its own real-pipeline track (`scenarios_phase1.py`) instead of retrofitting the
+Phase-0 stubs — see that file's docstring for why. Still open:
 - **Phase 2** — assert ATM/strike/symbol correctness and structure shape.
 - **Phase 3** — fault injection (missing greeks, bad tick, partial fill, reject); assert
-  risk invariants (no breach, EOD square-off) hold under faults.
+  risk invariants (no breach, EOD square-off) hold under faults. This is also where the
+  Phase-0 skeleton's morph/hold/exit scenarios (A–E) either get real code to test against,
+  or get retired if that lifecycle shape changes.
 - **Phase 5** — assert the research loop produces a gated ParameterSet; AI stays offline.
 
-The MOCK/REAL legend in every report makes clear which assertions are exercising real code
-vs still-stubbed behaviour.
+The MOCK/REAL legend in the Phase-0 report makes clear which assertions are exercising
+real code vs still-stubbed behaviour. The Phase-1 track has no such legend — everything
+it touches (`runner.py`, `phase1.py`, `penguin.py`, `lights.py`) is real.
