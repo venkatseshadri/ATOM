@@ -89,7 +89,11 @@ def classify_regime(ind: dict) -> tuple[str, float, dict, dict]:
     probs = {"UP": round(p_up / s, 3), "DOWN": round(p_down / s, 3),
              "SIDEWAYS": round(p_side / s, 3)}
     label_map = {"UP": "TREND_UP", "DOWN": "TREND_DOWN", "SIDEWAYS": "SIDEWAYS"}
-    winner = max(probs, key=probs.get)
+    best = max(probs.values())
+    tied = [k for k, v in probs.items() if v == best]
+    # exact tie (most commonly UP==DOWN on an even bull/bear split) has no honest
+    # winner — default to SIDEWAYS rather than silently picking UP via dict order
+    winner = tied[0] if len(tied) == 1 else "SIDEWAYS"
     return label_map[winner], round(probs[winner], 2), probs, votes
 
 
@@ -192,7 +196,17 @@ def explain_regime(ind: dict, votes: dict, probs: dict) -> str:
         f"    P(SIDEWAYS) = 1 - trend-strength = 1 - {strength} = {round(p_side, 3)}"
         "  (mass left over when the market isn't trending enough to call)\n"
         "  Step C — normalise to guard rounding (should already sum to ~1.0)\n"
-        f"    -> UP={probs['UP']}  DOWN={probs['DOWN']}  SIDEWAYS={probs['SIDEWAYS']}")
+        f"    -> UP={probs['UP']}  DOWN={probs['DOWN']}  SIDEWAYS={probs['SIDEWAYS']}\n"
+        "  Step D — pick the winner (exact UP==DOWN tie defaults to SIDEWAYS, not "
+        f"dict order)\n    -> {_tie_note(probs)}")
+
+
+def _tie_note(probs: dict) -> str:
+    best = max(probs.values())
+    tied = [k for k, v in probs.items() if v == best]
+    if len(tied) > 1:
+        return f"TIE between {' and '.join(tied)} at {best} -> forced to SIDEWAYS"
+    return f"clear winner: {tied[0]} at {best} (no tie)"
 
 
 def explain_decision(fsm_state: str, regime: str, conf: float) -> str:
