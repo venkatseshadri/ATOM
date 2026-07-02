@@ -11,6 +11,7 @@ sys.path.insert(0, "src")
 
 from datetime import datetime   # noqa: E402
 
+from atom import config, lights, phase1       # noqa: E402
 from atom.atom_state import AtomState      # noqa: E402
 from atom.penguin import PenguinReader     # noqa: E402
 from atom.runner import run_once           # noqa: E402
@@ -27,12 +28,19 @@ def main() -> None:
     now = None
     max_stale = 90.0
     if fixture:
+        # deterministic demo path stays pinned to code defaults, not live-tunable config
         state = AtomState("data/atom_state_fixture.sqlite")
         state.reset()
         snap = reader.latest_snapshot()
         now = datetime.fromisoformat(snap.ts)
         max_stale = 1e9
     else:
+        # config/atom.conf was never actually wired to the live path before this —
+        # editing it had zero effect. Reload fresh every cycle (new process each cron
+        # tick anyway) so research-loop tuning takes effect within one minute.
+        cfg = config.load_config()
+        phase1.configure(cfg)
+        lights.configure(cfg)
         state = AtomState("data/atom_state.sqlite")
 
     print(f"=== ATOM Phase 1 — one cycle ({'fixture' if fixture else 'LIVE'}) ===")
