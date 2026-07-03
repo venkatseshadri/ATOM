@@ -3,7 +3,10 @@
 # Reads Penguin capture_nifty.sqlite READ-ONLY, writes only atom/data/atom_state.sqlite.
 # NO broker, NO credentials (Phase 3 = broker routing). flock = one cycle at a time.
 #
-# Usage (cron, trading_ceo user — NOT root, so atom_state stays trading_ceo-owned):
+# Usage: registered under ROOT's crontab (not trading_ceo — there is no trading_ceo
+# crontab on this box). atom_state.sqlite/logs/data end up root-owned as a result.
+# Originally documented/intended to run as trading_ceo; never actually deployed that
+# way. Revisit ownership deliberately later — not fixed here, just describing reality.
 #   */1 9-15 * * 1-5 /home/trading_ceo/atom/cron/run_atom_paper.sh
 
 set -e

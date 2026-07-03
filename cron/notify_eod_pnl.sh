@@ -2,7 +2,8 @@
 # ATOM EOD P&L notification — one-shot, cron-fired once daily after market close.
 # Runs pnl_report.py for today and sends the output to Telegram via notify.py.
 #
-# Usage (cron, trading_ceo user — matches run_atom_paper.sh's ownership):
+# Usage: registered under ROOT's crontab, matching run_atom_paper.sh's actual (not
+# documented) deployment — see that script's header for why.
 #   35 15 * * 1-5 /home/trading_ceo/atom/cron/notify_eod_pnl.sh
 
 set -e
