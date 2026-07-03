@@ -209,7 +209,7 @@ def _tie_note(probs: dict) -> str:
     return f"clear winner: {tied[0]} at {best} (no tie)"
 
 
-def explain_decision(fsm_state: str, regime: str, conf: float,
+def explain_decision(fsm_state: str, regime: str, conf: float, bar_ts: str,
                       final_intent: str | None = None) -> str:
     """Full decision-tree walkthrough of decide() — every branch it checks, in the exact
     order it checks them, marking which one actually fired (x) vs never reached (skipped
@@ -220,6 +220,7 @@ def explain_decision(fsm_state: str, regime: str, conf: float,
     unavailable). Pass the real post-cycle intent so that override is visible here
     instead of silently contradicting the RESULT line at the bottom of the log."""
     thr = CFG.get("regime.entry.min_confidence", 0.45)
+    eod_cutoff = CFG.get("session.eod.cutoff", "15:20")
     lines = ["  decide() checks these in order, stops at the first match:"]
 
     def _construction_note(would_open: str) -> str:
@@ -234,40 +235,53 @@ def explain_decision(fsm_state: str, regime: str, conf: float,
                  f"-> {b1}")
     if b1:
         lines.append("        => STOPS HERE: SKIP (single_position_open)")
-        lines.append("   [-] 2. confidence < min_confidence?         not reached")
-        lines.append("   [-] 3. regime == TREND_UP?                  not reached")
-        lines.append("   [-] 4. regime == TREND_DOWN?                not reached")
-        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        lines.append("   [-] 2. past EOD cutoff?                     not reached")
+        lines.append("   [-] 3. confidence < min_confidence?         not reached")
+        lines.append("   [-] 4. regime == TREND_UP?                  not reached")
+        lines.append("   [-] 5. regime == TREND_DOWN?                not reached")
+        lines.append("   [-] 6. else (SIDEWAYS / reversal)?          not reached")
         lines.append(f"  => regime={regime} confidence={conf} computed in Step 3 above, "
                       "but NEVER USED — branch 1 already decided the outcome")
         return "\n".join(lines)
 
-    b2 = conf < thr
-    lines.append(f"   [{'x' if b2 else ' '}] 2. Is confidence < min_confidence? "
-                 f"({conf} < {thr}) -> {b2}")
+    b2 = bar_ts[11:16] >= eod_cutoff
+    lines.append(f"   [{'x' if b2 else ' '}] 2. Is bar time past EOD cutoff? "
+                 f"({bar_ts[11:16]} >= {eod_cutoff}) -> {b2}")
     if b2:
-        lines.append("        => STOPS HERE: STAND_DOWN (low_confidence)")
-        lines.append("   [-] 3. regime == TREND_UP?                  not reached")
-        lines.append("   [-] 4. regime == TREND_DOWN?                not reached")
-        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        lines.append("        => STOPS HERE: STAND_DOWN (after_eod_cutoff) — no NEW entries "
+                     "this late, same cutoff that force-closes existing ones")
+        lines.append("   [-] 3. confidence < min_confidence?         not reached")
+        lines.append("   [-] 4. regime == TREND_UP?                  not reached")
+        lines.append("   [-] 5. regime == TREND_DOWN?                not reached")
+        lines.append("   [-] 6. else (SIDEWAYS / reversal)?          not reached")
         return "\n".join(lines)
 
-    b3 = regime == "TREND_UP"
-    lines.append(f"   [{'x' if b3 else ' '}] 3. Is regime == TREND_UP? -> {b3}")
+    b3 = conf < thr
+    lines.append(f"   [{'x' if b3 else ' '}] 3. Is confidence < min_confidence? "
+                 f"({conf} < {thr}) -> {b3}")
     if b3:
+        lines.append("        => STOPS HERE: STAND_DOWN (low_confidence)")
+        lines.append("   [-] 4. regime == TREND_UP?                  not reached")
+        lines.append("   [-] 5. regime == TREND_DOWN?                not reached")
+        lines.append("   [-] 6. else (SIDEWAYS / reversal)?          not reached")
+        return "\n".join(lines)
+
+    b4 = regime == "TREND_UP"
+    lines.append(f"   [{'x' if b4 else ' '}] 4. Is regime == TREND_UP? -> {b4}")
+    if b4:
         lines.append("        => STOPS HERE: OPEN bull_put_spread")
-        lines.append("   [-] 4. regime == TREND_DOWN?                not reached")
-        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        lines.append("   [-] 5. regime == TREND_DOWN?                not reached")
+        lines.append("   [-] 6. else (SIDEWAYS / reversal)?          not reached")
         return "\n".join(lines) + _construction_note("bull_put_spread")
 
-    b4 = regime == "TREND_DOWN"
-    lines.append(f"   [{'x' if b4 else ' '}] 4. Is regime == TREND_DOWN? -> {b4}")
-    if b4:
+    b5 = regime == "TREND_DOWN"
+    lines.append(f"   [{'x' if b5 else ' '}] 5. Is regime == TREND_DOWN? -> {b5}")
+    if b5:
         lines.append("        => STOPS HERE: OPEN bear_call_spread")
-        lines.append("   [-] 5. else (SIDEWAYS / reversal)?          not reached")
+        lines.append("   [-] 6. else (SIDEWAYS / reversal)?          not reached")
         return "\n".join(lines) + _construction_note("bear_call_spread")
 
-    lines.append(f"   [x] 5. else (regime={regime}, neither UP nor DOWN survived) -> True")
+    lines.append(f"   [x] 6. else (regime={regime}, neither UP nor DOWN survived) -> True")
     lines.append(f"        => STOPS HERE: STAND_DOWN ({regime.lower()})")
     return "\n".join(lines)
 
@@ -300,10 +314,19 @@ def branch_scores(ind: dict) -> dict:
 
 # ---- FSM entry decision (Phase 1: entry only) --------------------------------
 
-def decide(fsm_state: str, regime: str, conf: float) -> tuple[str, str]:
-    """(intent, structure). Phase 1 only opens with-trend on confirmed trend."""
+def decide(fsm_state: str, regime: str, conf: float, bar_ts: str) -> tuple[str, str]:
+    """(intent, structure). Phase 1 only opens with-trend on confirmed trend.
+
+    EOD cutoff blocks NEW entries the same way it forces existing ones closed
+    (check_exit's is_eod) — without this, a position could open right at/after the
+    cutoff and get force-closed 1-2 minutes later by the exit check, over and over,
+    producing meaningless ~2min "flash" trades whose P&L is tick-timing noise, not a
+    real trading outcome. Confirmed live 2026-07-03: 4 such trades in an 8-minute
+    window after the entry side had no matching gate."""
     if fsm_state != "FLAT":
         return "SKIP", "single_position_open"          # already in a trade
+    if bar_ts[11:16] >= CFG.get("session.eod.cutoff", "15:20"):
+        return "STAND_DOWN", "after_eod_cutoff"
     if conf < CFG.get("regime.entry.min_confidence", 0.45):
         return "STAND_DOWN", "low_confidence"
     if regime == "TREND_UP":
@@ -413,7 +436,7 @@ def check_exit(position: dict, reader, bar_ts: str) -> ExitCheck:
 
 def cycle(fsm_state: str, snap: Snapshot) -> tuple[str, dict, PaperOrder | None]:
     regime, conf, probs, votes = classify_regime(snap.ind)
-    intent, structure = decide(fsm_state, regime, conf)
+    intent, structure = decide(fsm_state, regime, conf, snap.ts)
     order = build_order(structure, snap) if intent == "OPEN" else None
     new_state = "SINGLE_SPREAD" if order else fsm_state
     if intent == "OPEN" and order is None:

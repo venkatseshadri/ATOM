@@ -53,18 +53,32 @@ def test_regime_low_adx_is_sideways():
 
 # ---- FSM entry decision ----------------------------------------------------
 
+_MORNING = "2026-07-03T09:20:00"
+_AFTER_EOD = "2026-07-03T15:25:00"   # past the 15:20 default cutoff
+
+
 def test_decide_opens_on_trend():
-    assert phase1.decide("FLAT", "TREND_UP", 0.7) == ("OPEN", "bull_put_spread")
-    assert phase1.decide("FLAT", "TREND_DOWN", 0.7) == ("OPEN", "bear_call_spread")
+    assert phase1.decide("FLAT", "TREND_UP", 0.7, _MORNING) == ("OPEN", "bull_put_spread")
+    assert phase1.decide("FLAT", "TREND_DOWN", 0.7, _MORNING) == ("OPEN", "bear_call_spread")
 
 
 def test_decide_skips_when_position_open():
-    assert phase1.decide("SINGLE_SPREAD", "TREND_UP", 0.9)[0] == "SKIP"
+    assert phase1.decide("SINGLE_SPREAD", "TREND_UP", 0.9, _MORNING)[0] == "SKIP"
 
 
 def test_decide_stands_down_low_conf_and_sideways():
-    assert phase1.decide("FLAT", "TREND_UP", 0.1)[0] == "STAND_DOWN"
-    assert phase1.decide("FLAT", "SIDEWAYS", 0.9)[0] == "STAND_DOWN"
+    assert phase1.decide("FLAT", "TREND_UP", 0.1, _MORNING)[0] == "STAND_DOWN"
+    assert phase1.decide("FLAT", "SIDEWAYS", 0.9, _MORNING)[0] == "STAND_DOWN"
+
+
+def test_decide_refuses_new_entry_past_eod_cutoff():
+    """The bug this guards: without this gate, a position could open right at/after
+    the EOD cutoff and get force-closed 1-2 minutes later by check_exit's is_eod,
+    repeating in a churn loop — confirmed live 2026-07-03, 4 such ~2min trades."""
+    intent, reason = phase1.decide("FLAT", "TREND_UP", 0.9, _AFTER_EOD)
+    assert intent == "STAND_DOWN" and reason == "after_eod_cutoff"
+    # even a clean, high-confidence trend must not open this late
+    assert phase1.decide("FLAT", "TREND_DOWN", 0.99, _AFTER_EOD)[0] == "STAND_DOWN"
 
 
 # ---- construction uses REAL premiums (no fabrication) ----------------------

@@ -84,7 +84,7 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
                 "votes": phase1.explain_votes(snap.ind, decision["votes"]),
                 "regime": phase1.explain_regime(snap.ind, decision["votes"], decision["probs"]),
                 "decision": phase1.explain_decision(fsm_state, decision["regime"],
-                                                      decision["confidence"],
+                                                      decision["confidence"], snap.ts,
                                                       decision["intent"]),
                 "fsm_meaning": phase1.FSM_MEANING.get(new_state, new_state),
                 "open_position": position,
