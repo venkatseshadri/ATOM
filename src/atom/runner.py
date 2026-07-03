@@ -44,6 +44,21 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
         return {"action": "STAND_DOWN", "reason": "stale_feed", "bar_ts": snap.ts,
                 "age_sec": round(age), "fsm_state": fsm_state}
 
+    # Exit check (SL/TP/EOD — minimal slice, no TSL/morph yet) runs BEFORE any new-entry
+    # decision. A stuck position must close before we ever ask "should we open."
+    exit_check, position = None, None
+    if fsm_state == "SINGLE_SPREAD":
+        position = state.last_open_position()
+        if position is not None:
+            exit_check = phase1.check_exit(position, reader, snap.ts)
+            if exit_check.triggered:
+                exit_legs = {"hedge_ltp": exit_check.hedge_ltp, "short_ltp": exit_check.short_ltp}
+                state.record_exit_and_checkpoint(position["ts"], now.isoformat(),
+                                                  exit_check.reason, exit_check.current_pnl,
+                                                  exit_legs, snap.ts)
+                return {"action": "EXIT", "reason": exit_check.reason, "bar_ts": snap.ts,
+                        "fsm_state": "FLAT", "position": position, "exit_check": exit_check}
+
     new_state, decision, order = phase1.cycle(fsm_state, snap)
 
     state.checkpoint_and_record(new_state, snap.ts, order, now.isoformat(), decision)
@@ -72,7 +87,8 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
                                                       decision["confidence"],
                                                       decision["intent"]),
                 "fsm_meaning": phase1.FSM_MEANING.get(new_state, new_state),
-                "open_position": state.last_open_position() if fsm_state != "FLAT" else None,
+                "open_position": position,
+                "exit_check": exit_check,
             },
             "lights": None if res is None else {
                 "lights": res.lights, "gap": res.gap, "permission": res.permission,

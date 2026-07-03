@@ -46,6 +46,25 @@ def main() -> None:
     print(f"=== ATOM Phase 1 — one cycle ({'fixture' if fixture else 'LIVE'}) ===")
     r = run_once(reader, state, now=now, max_stale_sec=max_stale)
 
+    if r["action"] == "EXIT":
+        ec, pos = r["exit_check"], r["position"]
+        RULE = "=" * 78
+        print(f"\n{RULE}")
+        print(f"EXIT — {r['reason']}  bar={r['bar_ts']}  fsm now=FLAT")
+        print(RULE)
+        legs_str = "; ".join(f"{a} {k}{rt} @₹{p}" for a, k, rt, p in pos["legs"])
+        print(f"Closing: {pos['structure']}  (opened bar {pos['bar_ts']})")
+        print(f"  entry: {legs_str}  |  net credit ₹{pos['net_credit']:,.0f}  "
+              f"max loss ₹{pos['max_loss']:,.0f}")
+        print(f"  exit prices: hedge={ec.hedge_ltp} (as of {ec.hedge_ltp_ts})  "
+              f"short={ec.short_ltp} (as of {ec.short_ltp_ts})")
+        print(f"  SL threshold=₹{ec.sl_threshold:,.0f}  TP threshold=₹{ec.tp_threshold:,.0f}  "
+              f"is_eod={ec.is_eod}")
+        print(f"  => realized P&L = ₹{ec.current_pnl:,.0f}" if ec.current_pnl is not None
+              else "  => realized P&L unknown (forced EOD close with no price data)")
+        print(RULE)
+        return
+
     if "explain" not in r:
         # early exit before a real cycle ran — no_data / no_new_bar / stale_feed
         age = f"  age={r['age_sec']}s (max {max_stale}s)" if "age_sec" in r else ""
@@ -104,6 +123,12 @@ def main() -> None:
         legs_str = "; ".join(f"{a} {k}{rt} @₹{p}" for a, k, rt, p in pos["legs"])
         print(f"   Position blocking new entries: {pos['structure']}  (opened bar {pos['bar_ts']})")
         print(f"     {legs_str}  |  net credit ₹{pos['net_credit']:,.0f}  max loss ₹{pos['max_loss']:,.0f}")
+        ec = ex.get("exit_check")
+        if ec:
+            pnl_str = f"₹{ec.current_pnl:,.0f}" if ec.current_pnl is not None else "unknown (missing leg price)"
+            print(f"     live monitor: P&L={pnl_str}  SL@₹{ec.sl_threshold:,.0f}  "
+                  f"TP@₹{ec.tp_threshold:,.0f}  is_eod={ec.is_eod}  "
+                  f"hedge={ec.hedge_ltp}({ec.hedge_ltp_ts})  short={ec.short_ltp}({ec.short_ltp_ts})")
     print(ex["decision"])
 
     print(f"\n{RULE}")

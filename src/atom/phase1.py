@@ -322,6 +322,8 @@ class PaperOrder:
     net_credit: float
     max_loss: float
     lot: int
+    expiry: str        # persisted so exit-checking re-queries the SAME contract later,
+                       # regardless of whether "current week" has since rolled forward
 
 
 def build_order(structure: str, snap: Snapshot) -> PaperOrder | None:
@@ -344,7 +346,67 @@ def build_order(structure: str, snap: Snapshot) -> PaperOrder | None:
     max_loss = round((wing - credit_per) * lot, 2)
     # hedge leg placed FIRST (leg-in safety), then the short
     legs = (("BUY", hedge_k, right, hedge_ltp), ("SELL", short_k, right, short_ltp))
-    return PaperOrder(structure, legs, net_credit, max_loss, lot)
+    return PaperOrder(structure, legs, net_credit, max_loss, lot, snap.expiry)
+
+
+# ---- exit check: SL / TP / EOD only (minimal slice — no TSL, no morph) --------
+
+@dataclass(frozen=True)
+class ExitCheck:
+    triggered: bool
+    reason: str | None          # "SL" | "TP" | "EOD" | None
+    current_pnl: float | None   # None if either leg has no price at all (never abstains
+                                 # SL/TP on stale-but-present data — only on missing data)
+    hedge_ltp: float | None
+    hedge_ltp_ts: str | None
+    short_ltp: float | None
+    short_ltp_ts: str | None
+    sl_threshold: float
+    tp_threshold: float
+    is_eod: bool
+
+
+def check_exit(position: dict, reader, bar_ts: str) -> ExitCheck:
+    """SL = risk.sl.pct of max_loss lost. TP = risk.tp.pct of net_credit captured.
+    EOD = bar time-of-day >= session.eod.cutoff, forces exit regardless of P&L (a stale
+    open position must not block the next session's entries — closes at best-available
+    price even if that price is a day+ stale; still better than never closing).
+
+    Per-leg prices come from PenguinReader.latest_price_for() — NOT the chain-snapshot's
+    ATM-windowed chain, which won't contain a held strike once spot has drifted away, and
+    NOT _option_chain()'s shared-max-timestamp filter, which silently drops a leg whose
+    last tick is older than the other leg's (confirmed live: deep-OTM hedge legs can go
+    a full day+ without a fresh tick)."""
+    (_, h_k, h_r, h_entry), (_, s_k, s_r, s_entry) = position["legs"]
+    expiry = position["expiry"]
+    max_loss, net_credit, lot = position["max_loss"], position["net_credit"], position["lot"]
+    sl_threshold = -round(CFG.get("risk.sl.pct", 35) / 100.0 * max_loss, 2)
+    tp_threshold = round(CFG.get("risk.tp.pct", 50) / 100.0 * net_credit, 2)
+    is_eod = bar_ts[11:16] >= CFG.get("session.eod.cutoff", "15:20")
+
+    hedge = reader.latest_price_for(expiry, h_k, h_r)
+    short = reader.latest_price_for(expiry, s_k, s_r)
+    hedge_ltp, hedge_ts = hedge if hedge else (None, None)
+    short_ltp, short_ts = short if short else (None, None)
+
+    current_pnl = None
+    if hedge_ltp is not None and short_ltp is not None:
+        entry_credit_per_unit = s_entry - h_entry
+        cost_to_close_per_unit = short_ltp - hedge_ltp
+        current_pnl = round((entry_credit_per_unit - cost_to_close_per_unit) * lot, 2)
+
+    def _result(triggered: bool, reason: str | None) -> ExitCheck:
+        return ExitCheck(triggered, reason, current_pnl, hedge_ltp, hedge_ts,
+                         short_ltp, short_ts, sl_threshold, tp_threshold, is_eod)
+
+    if is_eod:
+        return _result(True, "EOD")
+    if current_pnl is not None:
+        if current_pnl <= sl_threshold:
+            return _result(True, "SL")
+        if current_pnl >= tp_threshold:
+            return _result(True, "TP")
+    return _result(False, None)
 
 
 # ---- the cycle (pure): state + snapshot -> new_state, decision, paper_order ---

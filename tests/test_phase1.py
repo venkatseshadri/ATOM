@@ -208,6 +208,112 @@ def test_branch_scores_winner_matches_regime():
     assert b["NotUp"]["value"] >= 1                  # raw bearish family mass
 
 
+# ---- exit check: SL / TP / EOD (minimal slice) ------------------------------
+
+class _FakeReader:
+    """Controlled per-leg prices — check_exit() only needs latest_price_for()."""
+    def __init__(self, prices: dict):
+        self.prices = prices   # {(strike, right): (ltp, ts)}
+
+    def latest_price_for(self, expiry, strike, right):
+        return self.prices.get((strike, right))
+
+
+_POSITION = {
+    "ts": "2026-07-01T09:45:00", "bar_ts": "2026-07-01T09:44:00",
+    "structure": "bull_put_spread", "net_credit": 5370.0, "max_loss": 9630.0, "lot": 75,
+    "legs": [["BUY", 23750, "PE", 233.75], ["SELL", 23950, "PE", 305.35]],
+    "expiry": "28-JUL-2026",
+}
+
+
+def _reader_at(hedge_ltp, short_ltp, ts="2026-07-02T10:00:00"):
+    return _FakeReader({(23750, "PE"): (hedge_ltp, ts), (23950, "PE"): (short_ltp, ts)})
+
+
+def test_check_exit_still_holding_no_trigger():
+    # small favorable move, nowhere near SL or TP
+    ec = phase1.check_exit(_POSITION, _reader_at(220.0, 290.0), "2026-07-02T10:00:00")
+    assert not ec.triggered and ec.reason is None
+    assert ec.current_pnl is not None
+
+
+def test_check_exit_sl_triggers():
+    # spread moves hard against the position — mark-to-market loss past 35% of max_loss
+    ec = phase1.check_exit(_POSITION, _reader_at(233.75, 380.0), "2026-07-02T10:00:00")
+    assert ec.triggered and ec.reason == "SL"
+    assert ec.current_pnl <= ec.sl_threshold
+
+
+def test_check_exit_tp_triggers():
+    # both legs decay hard — captured most of the credit
+    ec = phase1.check_exit(_POSITION, _reader_at(50.0, 60.0), "2026-07-02T10:00:00")
+    assert ec.triggered and ec.reason == "TP"
+    assert ec.current_pnl >= ec.tp_threshold
+
+
+def test_check_exit_eod_forces_close_even_mid_range():
+    # P&L sits between SL and TP thresholds, but bar time is past the EOD cutoff
+    ec = phase1.check_exit(_POSITION, _reader_at(220.0, 290.0), "2026-07-02T15:25:00")
+    assert ec.triggered and ec.reason == "EOD" and ec.is_eod
+
+
+def test_check_exit_eod_forces_close_even_with_no_price_data():
+    """The whole point of EOD: a stuck position with stale/missing prices must still
+    close, not silently stay open forever waiting for data that may never arrive."""
+    reader = _FakeReader({})   # neither leg has any price at all
+    ec = phase1.check_exit(_POSITION, reader, "2026-07-02T15:25:00")
+    assert ec.triggered and ec.reason == "EOD"
+    assert ec.current_pnl is None
+
+
+def test_check_exit_missing_price_does_not_falsely_trigger_sl_tp():
+    reader = _FakeReader({(23750, "PE"): (220.0, "2026-07-02T10:00:00")})  # short leg missing
+    ec = phase1.check_exit(_POSITION, reader, "2026-07-02T10:00:00")
+    assert not ec.triggered and ec.current_pnl is None
+
+
+def test_record_exit_and_checkpoint_atomic(tmp_path):
+    state = AtomState(str(tmp_path / "s.sqlite"))
+    state.checkpoint_and_record("SINGLE_SPREAD", "2026-07-01T09:44:00",
+                                 phase1.PaperOrder("bull_put_spread",
+                                                    (("BUY", 23750, "PE", 233.75),
+                                                     ("SELL", 23950, "PE", 305.35)),
+                                                    5370.0, 9630.0, 75, "28-JUL-2026"),
+                                 "2026-07-01T09:45:00.000000",
+                                 {"regime": "TREND_UP", "confidence": 0.75})
+    pos = state.last_open_position()
+    assert pos is not None
+
+    state.record_exit_and_checkpoint(pos["ts"], "2026-07-02T15:25:00", "EOD", 7113.75,
+                                     {"hedge_ltp": 196.65, "short_ltp": 173.4},
+                                     "2026-07-02T15:25:00")
+    assert state.load() == ("FLAT", "2026-07-02T15:25:00")
+    assert state.last_open_position() is None          # closed, no longer "open"
+
+
+def test_run_once_exit_takes_priority_over_new_entry_check(tmp_path, monkeypatch):
+    """When SINGLE_SPREAD and exit triggers, run_once must close+return EXIT without
+    ever calling decide()/classify_regime() for a new entry on the same tick."""
+    reader = PenguinReader(FIX)
+    state = AtomState(str(tmp_path / "s.sqlite"))
+    now = _now_at_bar(reader)
+    state.checkpoint_and_record("SINGLE_SPREAD", "2000-01-01T00:00:00",
+                                 phase1.PaperOrder("bull_put_spread",
+                                                    (("BUY", 23750, "PE", 233.75),
+                                                     ("SELL", 23950, "PE", 305.35)),
+                                                    5370.0, 9630.0, 75, "28-JUL-2026"),
+                                 now.isoformat(), {"regime": "TREND_UP", "confidence": 0.75})
+
+    monkeypatch.setattr(phase1, "check_exit",
+                        lambda position, rdr, bar_ts: phase1.ExitCheck(
+                            True, "TP", 5000.0, 200.0, bar_ts, 100.0, bar_ts, -1000.0, 2000.0, False))
+    r = run_once(reader, state, now=now, max_stale_sec=1e9)
+    assert r["action"] == "EXIT" and r["reason"] == "TP"
+    fsm_state, _ = state.load()
+    assert fsm_state == "FLAT"
+
+
 def test_ai_optimizer_is_mock_and_type_safe():
     from atom import ai_optimizer, config
     cfg = config.load_config()

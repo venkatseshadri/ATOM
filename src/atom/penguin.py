@@ -128,6 +128,26 @@ class PenguinReader:
                 out[(s, otype)] = {"ltp": _f(ltp), "oi": _f(oi)}
         return out
 
+    def latest_price_for(self, expiry: str, strike: int, option_type: str) -> tuple | None:
+        """Independent per-leg latest price — for exit-checking an EXISTING position,
+        not for a fresh chain snapshot. _option_chain() filters to one shared max
+        timestamp across all strikes, which silently drops a leg whose last tick is
+        older than another leg's (confirmed live: a deep-OTM hedge leg can go a full
+        day+ without a fresh tick while the near-ATM short leg updates every minute).
+        Returns (ltp, timestamp) or None if this strike/expiry has no price at all."""
+        tok = _expiry_to_tsym(expiry)
+        if not tok:
+            return None
+        c = self._connect()
+        try:
+            row = c.execute(
+                "select ltp, timestamp from option_prices where strike=? and option_type=? "
+                "and tsym like ? order by timestamp desc limit 1",
+                (strike, option_type, f"NIFTY{tok}%")).fetchone()
+            return (_f(row[0]), row[1]) if row and row[0] is not None else None
+        finally:
+            c.close()
+
     def multitf(self, tf: int, limit: int = 3) -> list[dict]:
         """Newest-first candles for a timeframe (minutes) from market_data_multitf."""
         c = self._connect()
