@@ -6,6 +6,7 @@ for an open position re-uses phase1.check_exit() against live Penguin prices.
 Usage: python3 atom_report.py
 """
 import json
+import os
 import sqlite3
 import sys
 from datetime import datetime, timedelta
@@ -14,6 +15,36 @@ sys.path.insert(0, "src")
 
 DB = "data/atom_state.sqlite"
 LIVE = "/home/trading_ceo/python-trader/varaha/data/capture_nifty.sqlite"
+FLATTRADE_TOKENS = "/home/trading_ceo/python-trader/tokens.json"
+SHOONYA_CRED = "/home/trading_ceo/python-trader/Shoonya_oAuthAPI-py/cred.yml"
+
+
+def _age_str(dt: datetime) -> str:
+    hrs = (datetime.now() - dt).total_seconds() / 3600
+    return f"{hrs:.1f}h ago" if hrs < 48 else f"{hrs / 24:.1f}d ago"
+
+
+def _broker_token_status() -> list[str]:
+    """Read-only — never re-triggers a refresh. Shows raw age, not a GO/NOGO: refresh
+    only runs 07:00 Mon-Fri, so a naive freshness threshold would false-alarm on
+    weekends/holidays the same way PENGUIN's health report already does."""
+    lines = []
+    try:
+        ft = json.load(open(FLATTRADE_TOKENS))
+        last_login = datetime.strptime(ft["last_login"], "%Y-%m-%d %H:%M:%S")
+        ok = "✅" if ft.get("exchange_ok") else "⚠️"
+        lines.append(f"Flattrade token: {ok} last_login={_age_str(last_login)} "
+                     f"(user={ft.get('user_id', '?')})")
+    except Exception as e:
+        lines.append(f"Flattrade token: ⚠️ unreadable ({e})")
+
+    try:
+        mtime = datetime.fromtimestamp(os.path.getmtime(SHOONYA_CRED))
+        lines.append(f"Shoonya token:   ✅ cred file updated {_age_str(mtime)}")
+    except Exception as e:
+        lines.append(f"Shoonya token:   ⚠️ unreadable ({e})")
+
+    return lines
 
 
 def _rows():
@@ -88,6 +119,9 @@ def main() -> None:
 
     status_emoji = "🟢" if fsm_state == "FLAT" else "🟡"
     print(f"🔬 ATOM {status_emoji} {fsm_state} — {now.strftime('%Y-%m-%d %H:%M')} IST")
+
+    for line in _broker_token_status():
+        print(line)
 
     if open_rows:
         pos = open_rows[-1]
