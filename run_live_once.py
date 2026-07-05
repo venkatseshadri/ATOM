@@ -17,7 +17,8 @@ sys.path.insert(0, "src")
 
 from datetime import datetime   # noqa: E402
 
-from atom import config, lights, phase1       # noqa: E402
+from atom import config, connectivity as conn, lights, phase1       # noqa: E402
+from atom import session_lifecycle as sl  # noqa: E402
 from atom.atom_state import AtomState      # noqa: E402
 from atom.instrument import InstrumentMaster  # noqa: E402
 from atom.penguin import PenguinReader     # noqa: E402
@@ -166,10 +167,19 @@ def main() -> None:
                 print(f"     TSL ARMED: floor=₹{ec.tsl:,.0f}  high-water=₹{ec.high_water_pnl:,.0f}")
     print(ex["decision"])
 
+    print("\n7) SESSION LIFECYCLE  (Module 7 — day/phase/deadlines; NOT yet gating decide(), logged for validation)")
+    _print_session_lifecycle(index, r["bar_ts"], r["fsm_state"] != "FLAT")
+
+    print("\n8) SESSION HEALTH  (Module 11 — shared broker session + real margin, read-only)")
+    _print_session_health(index)
+
     print(f"\n{RULE}")
     rv = r.get("risk_verdict")
     if rv:
-        print(f"MODULE 5 RISK GATE: {rv.verdict}  qty={rv.permitted_qty}  reasons={rv.reasons}")
+        _print_risk_verdict(rv)
+    print("MODULE 13 ORDER/EXECUTION: built + tested (paper fills, sequencing, leg-in "
+          "detection) but NOT yet driving this fill — build_order()'s own real-chain "
+          "lookup remains the live fill source. See PHASE-3-TECHNICAL.md.")
     order = r.get("order")
     if order:
         print("RESULT: OPEN — paper order placed (PAPER — no broker)")
@@ -183,6 +193,59 @@ def main() -> None:
         print(f"RESULT: {r['action']} ({r.get('structure')})  fsm now={r['fsm_state']}  "
               "— no order placed")
     print(RULE)
+
+
+def _print_session_lifecycle(index: str, bar_ts: str, has_open_position: bool) -> None:
+    """Module 7 narration — informational only right now (decide() still uses its own
+    hardcoded EOD-cutoff string, see PHASE-3-TECHNICAL.md 'Not wired'). Prints what the
+    real calendar-driven session logic WOULD say, so a human can sanity-check it
+    against the live cycle before it's wired to actually gate anything."""
+    now = datetime.fromisoformat(bar_ts)
+    cal = sl.MarketCalendar()
+    day_type = cal.day_type(now.date())
+    open_, close = cal.session_times(now.date())
+    dl = cal.deadlines(now.date())
+    phase = sl.compute_phase(now, day_type, open_, close, dl.squareoff_start)
+    start, cutoff = sl.entry_window(open_, dl)
+    entry_ok = sl.is_entry_allowed(now, start, cutoff)
+    print(f"   day_type={day_type}  phase={phase}  entry_window=[{start:%H:%M}-{cutoff:%H:%M}]  "
+         f"entry_allowed={entry_ok}")
+    print(f"   deadlines: last_entry_cutoff={dl.last_entry_cutoff:%H:%M}  "
+         f"squareoff_start={dl.squareoff_start:%H:%M}  hard_flat={dl.hard_flat_deadline:%H:%M}")
+    if has_open_position:
+        level = sl.square_off_level(now, dl, is_flat=False)
+        status = sl.square_off_status(now, dl, is_flat=False)
+        urgency = {0: "not due yet", 1: "SOFT", 2: "AGGRESSIVE", 3: "HARD/MARKET",
+                  -1: "HALTED-UNRESOLVED"}[level]
+        print(f"   square-off (position open): level={level} ({urgency})  status={status}")
+
+
+def _print_session_health(index: str) -> None:
+    """Module 11 narration — secondary signal (bar-freshness is the primary
+    protection against stale data); shown for validation, doesn't gate the cycle."""
+    health = conn.check_session_health(index)
+    alive_str = "ALIVE" if health.alive else f"NOT ALIVE ({health.reason})"
+    age_str = f"{health.age_sec:.0f}s old" if health.age_sec is not None else "n/a"
+    print(f"   feed heartbeat [{index}]: {alive_str}  (last beat {age_str})")
+    bm = conn.read_broker_margin()
+    if bm.available:
+        print(f"   broker margin: free=₹{bm.free_margin:,.0f}  "
+             f"used=₹{bm.used_margin:,.0f}  as_of={bm.as_of}  (age {bm.age_days:.1f}d)")
+    else:
+        print(f"   broker margin: UNKNOWN ({bm.reason}) — informational gate only, "
+             "does not block trading")
+
+
+def _print_risk_verdict(rv) -> None:
+    """Module 5 narration — the WHY, not just the verdict tuple: which constraint
+    bound, what the money figures actually are."""
+    print(f"MODULE 5 RISK GATE: {rv.verdict}  (qty requested vs permitted={rv.permitted_qty}, "
+         f"variant={rv.variant})")
+    if rv.verdict != "REJECTED":
+        print(f"   max_loss_total=₹{rv.max_loss_total:,.0f}  "
+             f"margin_blocked=₹{rv.margin_blocked:,.0f}  binding={rv.sizing_basis}")
+    for reason in rv.reasons:
+        print(f"   -> {reason}")
 
 
 def _append_order(r: dict, order) -> None:
