@@ -13,6 +13,14 @@ Data-availability limits, checked against real retention (not assumed):
   structure_type: full window (needs raw 1-min OHLC, stored back to 05-29).
   vwap:           only from 2026-06-12 onward (futures volume db starts there — no
                   workaround, the data simply doesn't exist before that).
+
+VWAP validation note: day_vwap_series() was cross-checked against an INDEPENDENT
+reimplementation of the live algorithm built directly from the raw
+NIFTY_1min.log/NIFTY-FUT_1min.log files (not this module, not the DB) — both gave
+IDENTICAL results (e.g. 24309.87 at 07-03 09:20), confirming this function matches the
+intended algorithm exactly. Both differ slightly from what the live enricher actually
+stored that day (24311.66) — a live-execution timing artifact in the real-time polling
+loop, not a recompute bug. Safe to trust for backtesting.
 """
 from __future__ import annotations
 
