@@ -1,0 +1,38 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.12.3', 'Platform': 'Linux-6.8.0-117-generic-x86_64-with-glibc2.39', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'cov': '7.0.0', 'metadata': '3.1.1', 'anyio': '4.13.0', 'json-report': '1.5.0', 'mock': '3.15.1'}}
+rootdir: /home/trading_ceo/atom
+configfile: pyproject.toml
+plugins: cov-7.0.0, metadata-3.1.1, anyio-4.13.0, json-report-1.5.0, mock-3.15.1
+collecting ... collected 27 items
+
+tests/test_session_lifecycle.py::test_normal_weekday_is_full_trading PASSED [  3%]
+tests/test_session_lifecycle.py::test_holiday_weekday_is_holiday PASSED  [  7%]
+tests/test_session_lifecycle.py::test_weekend_is_weekend PASSED          [ 11%]
+tests/test_session_lifecycle.py::test_year_outside_calendar_coverage_fails_safe PASSED [ 14%]
+tests/test_session_lifecycle.py::test_missing_calendar_file_fails_safe PASSED [ 18%]
+tests/test_session_lifecycle.py::test_deadlines_are_monotonic_and_close_relative PASSED [ 22%]
+tests/test_session_lifecycle.py::test_expiry_day_has_tighter_squareoff_start PASSED [ 25%]
+tests/test_session_lifecycle.py::test_phase_transitions_through_the_day PASSED [ 29%]
+tests/test_session_lifecycle.py::test_non_trading_day_phase PASSED       [ 33%]
+tests/test_session_lifecycle.py::test_halt_overlay_only_shows_during_active_phases PASSED [ 37%]
+tests/test_session_lifecycle.py::test_entry_window_start_after_open_settle PASSED [ 40%]
+tests/test_session_lifecycle.py::test_is_entry_allowed_boundary_inclusive_block PASSED [ 44%]
+tests/test_session_lifecycle.py::test_one_way_latch_never_reopens PASSED [ 48%]
+tests/test_session_lifecycle.py::test_halt_blocks_entries_even_inside_window PASSED [ 51%]
+tests/test_session_lifecycle.py::test_degenerate_window_when_start_would_exceed_cutoff PASSED [ 55%]
+tests/test_session_lifecycle.py::test_squareoff_level_zero_before_window PASSED [ 59%]
+tests/test_session_lifecycle.py::test_squareoff_level_zero_when_already_flat PASSED [ 62%]
+tests/test_session_lifecycle.py::test_squareoff_escalates_soft_then_aggressive_then_hard PASSED [ 66%]
+tests/test_session_lifecycle.py::test_squareoff_unavailable_position_state_treated_as_not_flat PASSED [ 70%]
+tests/test_session_lifecycle.py::test_squareoff_halted_gives_unresolved_escalation_not_a_normal_level PASSED [ 74%]
+tests/test_session_lifecycle.py::test_squareoff_status_failed_after_close_with_open_position PASSED [ 77%]
+tests/test_session_lifecycle.py::test_squareoff_status_flat_confirmed PASSED [ 81%]
+tests/test_session_lifecycle.py::test_squareoff_status_cannot_confirm_flat PASSED [ 85%]
+tests/test_session_lifecycle.py::test_clock_backward_jump_detected PASSED [ 88%]
+tests/test_session_lifecycle.py::test_clock_forward_jump_detected PASSED [ 92%]
+tests/test_session_lifecycle.py::test_clock_normal_progression_no_anomaly PASSED [ 96%]
+tests/test_session_lifecycle.py::test_clock_first_reading_no_anomaly PASSED [100%]
+
+============================== 27 passed in 0.02s ==============================

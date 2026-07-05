@@ -7,7 +7,7 @@ Claude builds and reports; the Board signs. Record sign-offs here.
 |------|-------|--------------------------------------------|--------|------------------|
 | GATE 0 | 0 Skeleton | contracts frozen, 16 stubs, one full pass, 16/16 traces, tests green | ✅ **signed** | Board, 2026-06-30 |
 | GATE 1 | 1 Regime + Signal | real Penguin snapshot, 7-family regime, FSM entry, real-premium paper order; freshness gate; 27 tests | ✅ **signed** | Board (Venkat), 2026-07-05 |
-| GATE 2 | 2 Strike + Structure | expiry/strike/symbol resolution, concrete legs (paper) | ⬜ | — |
+| GATE 2 | 2 Strike + Structure | expiry/strike/symbol resolution, concrete legs (paper) | ✅ **signed** | Board (Venkat), 2026-07-05 |
 | GATE 3 | 3 Risk + Execution | risk invariants (no breach), stops trail, paper fills, EOD square-off | ⬜ | — |
 | GATE 4 | 4 Ledger + Monitor | P&L accuracy, audit reconstruction, frozen config, restart recovery | ⬜ | — |
 | GATE 5 | 5 Research Loop | post-mortem → ParameterSet → backtest → approval; AI out of loop | ⬜ | — |

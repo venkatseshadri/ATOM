@@ -1,0 +1,8 @@
+{
+  "description": "frozen test fixture, not the live shared calendar",
+  "year": 2026,
+  "holidays": [
+    {"date": "2026-10-02", "day": "Friday", "name": "Gandhi Jayanti"},
+    {"date": "2026-12-25", "day": "Friday", "name": "Christmas"}
+  ]
+}

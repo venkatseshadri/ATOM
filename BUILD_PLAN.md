@@ -65,7 +65,7 @@ Check every box, then the Board signs the gate. Unchecked = phase not done.
 - [ ] Line-item Given/When/Then tests for modules 1,2,3 pass.
 - **Gate 1 (Board):** review regime calls + decisions on replay. → unlocks Phase 2.
 
-### Phase 2 — Strike + Structure  ☐ GATE 2
+### Phase 2 — Strike + Structure  ✅ GATE 2
 - [x] Module 12 resolves weekly expiry, strike ladder, lot/tick, correct per-index tradingsymbol.
 - [x] Module 4 turns a decision into concrete legs (strike/wing/qty/price), distance-method
       (greek-driven N/A — no per-strike greeks in Penguin data; see PHASE-2-TECHNICAL.md), paper only.

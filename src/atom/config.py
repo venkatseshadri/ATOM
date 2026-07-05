@@ -10,10 +10,23 @@ import os
 DEFAULTS = {
     "strategy.lot.size": 65,   # real NIFTY lot size, confirmed vs broker scrip_master 2026-07-05
     "strategy.wing.strikes": 4,
-    "risk.deploy.inr": 200000,
+    "risk.deploy.inr": 200000,           # capital-at-risk ceiling (memory: iron fly ₹2L)
     "risk.sl.pct": 35,
     "risk.tp.pct": 50,
-    "risk.dd.floor.pct": 10,
+    "risk.dd.floor.pct": 10,             # memory: iron fly 10% DD floor
+    "risk.deployment.pct": 80,           # ‹TBD› margin-deployment ceiling, % of capital
+    "risk.concentration.pct": 50,        # ‹TBD› single-trade cap, % of at-risk ceiling
+    "risk.daily_loss.inr": 20000,        # ‹TBD› daily-loss kill-switch
+    "risk.reentry.max": 2,               # memory: iron fly "2 re-entries"
+    "risk.concurrent.max": 1,            # memory: iron fly "single position"
+    "risk.trades_per_day.max": 10,       # ‹TBD›
+    "risk.margin.pct_of_maxloss": 100,   # ‹TBD› margin ≈ max loss for defined-risk spreads
+    "risk.margin.buffer.pct": 10,
+    "risk.duplicate_window.sec": 5,
+    "tsl.activation.pct": 30,             # ‹TBD› arm TSL once this % of credit captured
+    "tsl.trail_gap.pct": 50,               # ‹TBD› trailed floor sits this % of credit behind high-water
+    "stop.expiry_tighten.factor": 0.7,     # ‹TBD› sl.pct multiplier on expiry day
+    "stop.edge_exhausted.pct": 90,         # ‹TBD› backstop exit if TP is configured looser than this
     "expiry.rule": "current_week",
     "session.eod.cutoff": "15:20",
     "regime.entry.min_confidence": 0.45,

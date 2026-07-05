@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.12.3', 'Platform': 'Linux-6.8.0-117-generic-x86_64-with-glibc2.39', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'cov': '7.0.0', 'metadata': '3.1.1', 'anyio': '4.13.0', 'json-report': '1.5.0', 'mock': '3.15.1'}}
+rootdir: /home/trading_ceo/atom
+configfile: pyproject.toml
+plugins: cov-7.0.0, metadata-3.1.1, anyio-4.13.0, json-report-1.5.0, mock-3.15.1
+collecting ... collected 25 items
+
+tests/test_risk.py::test_missing_required_field_rejects PASSED           [  4%]
+tests/test_risk.py::test_negative_qty_rejects PASSED                     [  8%]
+tests/test_risk.py::test_deployed_exceeding_capital_state_inconsistent PASSED [ 12%]
+tests/test_risk.py::test_max_loss_derived_from_geometry_not_trusted PASSED [ 16%]
+tests/test_risk.py::test_naked_leg_undefined_risk_rejected PASSED        [ 20%]
+tests/test_risk.py::test_credit_exceeding_width_is_implausible PASSED    [ 24%]
+tests/test_risk.py::test_degenerate_same_strike_rejected PASSED          [ 28%]
+tests/test_risk.py::test_deploy_cap_resizes_when_over PASSED             [ 32%]
+tests/test_risk.py::test_deploy_cap_already_breached_rejects_all_new PASSED [ 36%]
+tests/test_risk.py::test_deploy_cap_boundary_inclusive_approve PASSED    [ 40%]
+tests/test_risk.py::test_dd_floor_blocks_new_entry PASSED                [ 44%]
+tests/test_risk.py::test_dd_floor_ok_above_floor PASSED                  [ 48%]
+tests/test_risk.py::test_daily_loss_cap_hit_rejects PASSED               [ 52%]
+tests/test_risk.py::test_reentry_limit_hit PASSED                        [ 56%]
+tests/test_risk.py::test_reentry_under_limit_passes PASSED               [ 60%]
+tests/test_risk.py::test_max_concurrent_single_position_mode PASSED      [ 64%]
+tests/test_risk.py::test_daily_trade_limit_hit PASSED                    [ 68%]
+tests/test_risk.py::test_duplicate_suspected_rejects PASSED              [ 72%]
+tests/test_risk.py::test_reconciliation_takes_binding_minimum PASSED     [ 76%]
+tests/test_risk.py::test_clean_approve_when_everything_fits PASSED       [ 80%]
+tests/test_risk.py::test_no_force_field_exists_to_honor PASSED           [ 84%]
+tests/test_risk.py::test_deterministic_same_inputs_same_verdict PASSED   [ 88%]
+tests/test_risk.py::test_missing_config_reference_fails_closed PASSED    [ 92%]
+tests/test_risk.py::test_plan_from_paper_order_roundtrips PASSED         [ 96%]
+tests/test_risk.py::test_property_no_approved_path_breaches_any_hard_limit PASSED [100%]
+
+============================== 25 passed in 0.04s ==============================

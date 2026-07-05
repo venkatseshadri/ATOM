@@ -1,0 +1,90 @@
+
+==============================================================================
+MODULE 7 — SESSION LIFECYCLE
+==============================================================================
+
+  GIVEN  2026-07-06 (Monday, in-calendar year)
+  WHEN   day_type() called
+  EXPECT FULL_TRADING
+  ACTUAL FULL_TRADING   [OK]
+
+  GIVEN  2026-10-02 (Friday, listed holiday in fixture)
+  WHEN   day_type() called
+  EXPECT HOLIDAY
+  ACTUAL HOLIDAY   [OK]
+
+  GIVEN  close=15:30, squareoff offset=12m
+  WHEN   deadlines() computed
+  EXPECT squareoff_start=15:18
+  ACTUAL squareoff_start=15:18   [OK]
+
+  GIVEN  cutoff=14:30, now=14:29:59
+  WHEN   is_entry_allowed()
+  EXPECT True
+  ACTUAL True   [OK]
+
+  GIVEN  cutoff=14:30, now=14:30:00
+  WHEN   is_entry_allowed()
+  EXPECT False
+  ACTUAL False   [OK]
+
+  GIVEN  now=hard_flat_deadline, position still open
+  WHEN   square_off_level()
+  EXPECT 3
+  ACTUAL 3   [OK]
+
+
+==============================================================================
+MODULE 5 — RISK & SIZING
+==============================================================================
+
+  GIVEN  200-wide vertical, credit 75, clean account
+  WHEN   evaluate()
+  EXPECT APPROVED qty=1
+  ACTUAL APPROVED qty=1   [OK]
+
+  GIVEN  realized_pnl_today = -20000 (== daily loss cap)
+  WHEN   evaluate()
+  EXPECT REJECTED DAILY_LOSS_CAP_HIT
+  ACTUAL REJECTED ('DAILY_LOSS_CAP_HIT',)   [OK]
+
+  GIVEN  reserved=150k, ceiling=200k, requested=20 lots
+  WHEN   evaluate()
+  EXPECT RESIZED (fits headroom only, < 20)
+  ACTUAL RESIZED qty=6   [OK]
+
+  GIVEN  re-entry count=2, max=2
+  WHEN   evaluate()
+  EXPECT REJECTED REENTRY_LIMIT_HIT
+  ACTUAL REJECTED ('REENTRY_LIMIT_HIT',)   [OK]
+
+  GIVEN  force_approve=True stuffed into plan, way over cap
+  WHEN   evaluate()
+  EXPECT REJECTED (force field ignored)
+  ACTUAL REJECTED   [OK]
+
+
+==============================================================================
+MODULE 6 — STOP MANAGEMENT
+==============================================================================
+
+  GIVEN  credit=5000, max_loss=9000, sl.pct=35, tp.pct=50
+  WHEN   initial_levels()
+  EXPECT sl=-3150.0 tp=2500.0
+  ACTUAL sl=-3150.0 tp=2500.0   [OK]
+
+  GIVEN  pnl reaches 30% of credit (activation)
+  WHEN   update_levels()
+  EXPECT tsl_armed=True
+  ACTUAL tsl_armed=True   [OK]
+
+  GIVEN  profit runs to 80% then reverses to 35%
+  WHEN   update_levels() ratchet
+  EXPECT tsl stays 1500.0 (never loosens)
+  ACTUAL tsl=1500.0   [OK]
+
+  GIVEN  is_eod=True, pnl mid-range (would not otherwise trigger)
+  WHEN   check_breach()
+  EXPECT TIME (unconditional)
+  ACTUAL TIME   [OK]
+

@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.12.3', 'Platform': 'Linux-6.8.0-117-generic-x86_64-with-glibc2.39', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'cov': '7.0.0', 'metadata': '3.1.1', 'anyio': '4.13.0', 'json-report': '1.5.0', 'mock': '3.15.1'}}
+rootdir: /home/trading_ceo/atom
+configfile: pyproject.toml
+plugins: cov-7.0.0, metadata-3.1.1, anyio-4.13.0, json-report-1.5.0, mock-3.15.1
+collecting ... collected 17 items
+
+tests/test_stop_management.py::test_initial_sl_is_pct_of_max_loss PASSED [  5%]
+tests/test_stop_management.py::test_initial_tp_is_pct_of_net_credit PASSED [ 11%]
+tests/test_stop_management.py::test_defined_risk_clamp_never_exceeds_max_loss PASSED [ 17%]
+tests/test_stop_management.py::test_expiry_day_tightens_sl PASSED        [ 23%]
+tests/test_stop_management.py::test_tsl_arms_at_activation_threshold PASSED [ 29%]
+tests/test_stop_management.py::test_tsl_inactive_below_activation PASSED [ 35%]
+tests/test_stop_management.py::test_tsl_sticky_once_armed_even_if_pnl_dips PASSED [ 41%]
+tests/test_stop_management.py::test_tsl_trails_favorable_movement PASSED [ 47%]
+tests/test_stop_management.py::test_tsl_never_loosens_on_a_worse_cycle PASSED [ 52%]
+tests/test_stop_management.py::test_restart_reload_preserves_locked_stop_not_recompute_looser PASSED [ 58%]
+tests/test_stop_management.py::test_no_breach_mid_range PASSED           [ 64%]
+tests/test_stop_management.py::test_sl_breach_before_tsl_armed PASSED    [ 70%]
+tests/test_stop_management.py::test_tsl_breach_reason_once_armed PASSED  [ 76%]
+tests/test_stop_management.py::test_tp_breach PASSED                     [ 82%]
+tests/test_stop_management.py::test_time_overrides_everything_even_mid_range_pnl PASSED [ 88%]
+tests/test_stop_management.py::test_loss_protection_checked_before_tp_when_both_could_fire PASSED [ 94%]
+tests/test_stop_management.py::test_edge_exhausted_fires_when_tp_threshold_set_high PASSED [100%]
+
+============================== 17 passed in 0.03s ==============================
