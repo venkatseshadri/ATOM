@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 
 DEFAULTS = {
-    "strategy.lot.size": 75,
+    "strategy.lot.size": 65,   # real NIFTY lot size, confirmed vs broker scrip_master 2026-07-05
     "strategy.wing.strikes": 4,
     "risk.deploy.inr": 200000,
     "risk.sl.pct": 35,
