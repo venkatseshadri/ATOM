@@ -30,23 +30,45 @@ that maps a PORCUPINE driver onto ATOM's `Orchestrator` — the seam is `run_sce
   `logs/harness_phase1.log`.
 - `tests/test_harness_phase1.py` — the Phase-1 harness must stay green.
 
+- `src/atom/scenarios_phase3.py` — fault-injection scenarios (added 2026-07-06). Two
+  catalogues: `SCENARIOS` (pipeline-driven, seeds `paper_trades` to engineer risk-gate
+  faults) and `DIRECT_CHECKS` (Modules 6/7/11 pure-function fault injection).
+- `src/atom/harness_phase3.py` — runs a Phase-3 scenario, asserts action/fsm_state/
+  paper_trades/risk_verdict against the real output.
+- `run_harness_phase3.py` — runs all Phase-3 scenarios + direct checks, prints + writes
+  `logs/harness_phase3.log`.
+- `tests/test_harness_phase3.py` — the Phase-3 harness must stay green.
+
 ## Run
 ```bash
 python3 run_harness.py            # Phase-0 skeleton: report to stdout + logs/harness.log
 python3 run_harness_phase1.py     # Phase-1 real pipeline: stdout + logs/harness_phase1.log
-python3 -m pytest                 # includes both harnesses
+python3 run_harness_phase3.py     # Phase-3 risk-gate + stop-mgmt faults: stdout + logs/harness_phase3.log
+python3 -m pytest                 # includes all three harnesses
 ```
 
 ## How it grows with the build
 Phase 0 drives the walking skeleton (scripted tapes); the harness already locks the
 state machine, exit paths, P&L direction, and the no-overnight invariant. Phase 1 is now
 covered by its own real-pipeline track (`scenarios_phase1.py`) instead of retrofitting the
-Phase-0 stubs — see that file's docstring for why. Still open:
+Phase-0 stubs — see that file's docstring for why.
+
+**Phase 3 closed (2026-07-06)**: `scenarios_phase3.py` + `harness_phase3.py` +
+`run_harness_phase3.py`. Two catalogues — pipeline-driven (`runner.run_once(use_tsl=,
+risk_gate=)` against the real fixture, seeding `paper_trades` to engineer daily-loss-cap/
+re-entry-limit/tiny-capital faults) and direct fault-injection for Modules 6/7/11 (bad
+tick, halted market at square-off, stale broker margin) since those aren't wired into
+`run_once`'s gating yet — no pipeline path exists to drive them through, so the functions
+are tested directly under the injected fault instead. **Caught a real bug**: a single
+implausible tick (50x the credit collected) permanently poisoned the TSL high-water mark
+— the ratchet-merge that protects against loosening also meant it never un-poisoned even
+after the price reverted to something sane, silently disabling the stop for the rest of
+the position's life. Fixed in `stop_management.py` (a credit spread's max profit is
+capped at the credit collected — any reading above that is clamped before it can update
+the ratchet).
+
+Still open:
 - **Phase 2** — assert ATM/strike/symbol correctness and structure shape.
-- **Phase 3** — fault injection (missing greeks, bad tick, partial fill, reject); assert
-  risk invariants (no breach, EOD square-off) hold under faults. This is also where the
-  Phase-0 skeleton's morph/hold/exit scenarios (A–E) either get real code to test against,
-  or get retired if that lifecycle shape changes.
 - **Phase 5** — assert the research loop produces a gated ParameterSet; AI stays offline.
 
 The MOCK/REAL legend in the Phase-0 report makes clear which assertions are exercising

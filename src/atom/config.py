@@ -26,6 +26,7 @@ DEFAULTS = {
     "risk.broker_margin_floor_inr": 50000,  # ‹TBD› real shared-account sanity floor
     "tsl.activation.pct": 30,             # ‹TBD› arm TSL once this % of credit captured
     "tsl.trail_gap.pct": 50,               # ‹TBD› trailed floor sits this % of credit behind high-water
+    "tsl.max_plausible_credit_pct": 100,    # bad-tick guard: PnL can't exceed 100% of credit collected
     "stop.expiry_tighten.factor": 0.7,     # ‹TBD› sl.pct multiplier on expiry day
     "stop.edge_exhausted.pct": 90,         # ‹TBD› backstop exit if TP is configured looser than this
     "expiry.rule": "current_week",

@@ -52,15 +52,25 @@ def initial_levels(net_credit_money: float, max_loss_money: float, cfg: dict,
 def update_levels(prior: Levels, current_pnl: float, net_credit_money: float,
                   cfg: dict) -> Levels:
     """6.3.1/6.3.2/6.3.3 — arm once activation reached (sticky), trail the high-water
-    mark, ratchet-merge so the floor only ever rises. Bad-tick guard: a single-cycle
-    PnL collapse can't un-arm or lower high_water below its own persisted value — the
-    ratchet-merge (max) makes that structurally impossible, no separate guard needed."""
+    mark, ratchet-merge so the floor only ever rises. Downside bad-tick guard: a
+    single-cycle PnL collapse can't un-arm or lower high_water below its own persisted
+    value — the ratchet-merge (max) makes that structurally impossible.
+
+    Upside bad-tick guard (PORCUPINE-caught 2026-07-05): a credit spread's mathematical
+    max profit is the net credit collected (cost-to-close can't go below 0) — any PnL
+    reading above that is a bad tick, not real profit. Without clamping it, a single
+    implausible print (e.g. a stale/erroneous quote) would poison high_water_pnl
+    PERMANENTLY: the ratchet-merge (max) that protects against loosening also means it
+    NEVER un-poisons even after the price reverts to something sane — the position's
+    stop silently becomes unreachable, disabling protection for the rest of its life."""
+    plausible_ceiling = net_credit_money * cfg.get("tsl.max_plausible_credit_pct", 100) / 100.0
+    plausible_pnl = min(current_pnl, plausible_ceiling)
     activation = cfg.get("tsl.activation.pct", 30) / 100.0 * net_credit_money
-    tsl_armed = prior.tsl_armed or current_pnl >= activation
+    tsl_armed = prior.tsl_armed or plausible_pnl >= activation
     if not tsl_armed:
         return prior
-    high_water = max(prior.high_water_pnl if prior.high_water_pnl is not None else current_pnl,
-                     current_pnl)
+    high_water = max(prior.high_water_pnl if prior.high_water_pnl is not None else plausible_pnl,
+                     plausible_pnl)
     trail_gap = cfg.get("tsl.trail_gap.pct", 50) / 100.0 * net_credit_money
     candidate = high_water - trail_gap
     new_tsl = candidate if prior.tsl is None else max(prior.tsl, candidate)

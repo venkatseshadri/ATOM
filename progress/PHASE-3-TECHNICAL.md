@@ -1,6 +1,6 @@
 # Phase 3 — Technical Detail
 
-**Status: all 5 modules built, 102 new tests green (186 total). Awaiting GATE 3.**
+**Status: all 5 modules built + live-wired + PORCUPINE fault harness, 218 tests green. Awaiting GATE 3.**
 
 Goal met: a complete paper-trade lifecycle exists and is proven end-to-end — decision →
 risk-gated → placed (paper fill, real chain data) → stops managed (SL/TSL/TP) → forced
@@ -85,6 +85,32 @@ heartbeat check — read-only, no broker call from ATOM itself.
 
 12 new tests (`test_connectivity.py` +8, `test_risk.py` +4, `test_atom_state_phase3.py`
 +1). Live-verified against the real file: ₹579,918.15 free margin read and passed cleanly.
+
+## PORCUPINE fault-injection harness (2026-07-06 — closes docs/PORCUPINE.md's Phase 3 gap)
+`scenarios_phase3.py` + `harness_phase3.py` + `run_harness_phase3.py`: two catalogues.
+- **Pipeline-driven** (4 scenarios): `runner.run_once(use_tsl=True, risk_gate=True)`
+  against the real fixture, seeding `paper_trades` to engineer specific account states —
+  daily-loss cap already hit, re-entry limit already hit, capital too small for even 1
+  lot. All assert the real `risk_verdict` and that no trade gets recorded when blocked.
+- **Direct fault injection** (3 checks) for Modules 6/7/11, which aren't wired into
+  `run_once`'s gating yet — no pipeline path exists to drive them through, so the pure
+  functions are tested directly under the injected fault: a bad tick against the TSL
+  ratchet, a halted market at square-off time, a stale broker-margin file.
+
+**Caught a real bug, fixed same session:** the bad-tick direct check exposed that
+`stop_management.update_levels()` had no plausibility guard on the upside — a single
+implausible PnL reading (50x the credit collected, the kind of thing a stale/erroneous
+quote produces) got accepted as the new high-water mark. Because the ratchet-merge that
+protects against *loosening* also means it never *un-poisons*, the stop was then locked
+at an unreachable level (₹247,500 on a ₹5,000-credit spread) — permanently, silently
+disabling protection for the rest of that position's life, even after the price reverted
+to something sane. Fixed: a credit spread's mathematical max profit is the credit
+collected (cost-to-close can't go below 0) — any reading above that is clamped to the
+ceiling (`tsl.max_plausible_credit_pct`, default 100%) before it can update the ratchet.
+6 new tests lock this in (2 unit + regression in `test_stop_management.py`, 1 in the
+direct-check catalogue, plus the harness assertion itself).
+
+7/7 harness scenarios pass. `logs/phase3/porcupine_harness.log` has the full report.
 
 ## Known gaps (honest, not fixed here)
 - **Greek-based SL (6.1.3) and greek-driven strike selection remain N/A** — same root

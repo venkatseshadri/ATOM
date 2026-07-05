@@ -140,3 +140,27 @@ def test_edge_exhausted_fires_when_tp_threshold_set_high():
     lv = initial_levels(NET_CREDIT, MAX_LOSS, cfg)
     t = check_breach(0.92 * NET_CREDIT, lv, is_eod=False, net_credit_money=NET_CREDIT, cfg=cfg)
     assert t.triggered and t.reason == "EDGE_EXHAUSTED"
+
+
+# ---- Bad-tick guard on the TSL high-water mark (PORCUPINE-caught 2026-07-05) ------
+
+def test_implausible_upside_tick_does_not_poison_ratchet_permanently():
+    """A credit spread's max profit is the full credit collected — a PnL reading way
+    above that (50x credit) is a bad tick, not real profit. Without a ceiling this
+    poisons high_water_pnl FOREVER (the ratchet-merge that protects against loosening
+    also means it never un-poisons), silently disabling the stop."""
+    lv = initial_levels(NET_CREDIT, MAX_LOSS, CFG)
+    lv2 = update_levels(lv, 50 * NET_CREDIT, NET_CREDIT, CFG)
+    assert lv2.high_water_pnl == NET_CREDIT          # clamped to the plausible ceiling
+    assert lv2.tsl == NET_CREDIT - 0.5 * NET_CREDIT  # trail gap off the CLAMPED value
+
+    # price reverts to something sane — the stop must still be a real, reachable level
+    lv3 = update_levels(lv2, 0.30 * NET_CREDIT, NET_CREDIT, CFG)
+    assert lv3.tsl == lv2.tsl                        # unchanged (ratchet), but SANE
+
+
+def test_plausible_ceiling_configurable():
+    cfg = {**CFG, "tsl.max_plausible_credit_pct": 120}   # allow up to 120% (fees/slippage buffer)
+    lv = initial_levels(NET_CREDIT, MAX_LOSS, cfg)
+    lv2 = update_levels(lv, 50 * NET_CREDIT, NET_CREDIT, cfg)
+    assert lv2.high_water_pnl == 1.2 * NET_CREDIT

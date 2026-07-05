@@ -1,0 +1,34 @@
+=== ATOM PORCUPINE harness — Phase 3 (risk gate + stop management faults) ===
+----------------------------------------------------------------------
+-- pipeline-driven (runner.run_once, real fixture) --
+[PASS] P3_risk_gate_approves_clean_entry
+        ✓ action == OPEN
+        ✓ fsm_state_after == SINGLE_SPREAD
+        ✓ paper_trades_count_after == 1
+        ✓ risk_verdict == APPROVED
+[PASS] P3_risk_gate_blocks_tiny_capital
+        ✓ action == STAND_DOWN
+        ✓ fsm_state_after == FLAT
+        ✓ paper_trades_count_after == 0
+        ✓ risk_verdict == REJECTED
+[PASS] P3_risk_gate_blocks_daily_loss_cap
+        ✓ action == STAND_DOWN
+        ✓ fsm_state_after == FLAT
+        ✓ paper_trades_count_after == 1
+        ✓ risk_verdict == REJECTED
+        ✓ risk reasons contain DAILY_LOSS_CAP_HIT
+[PASS] P3_risk_gate_blocks_reentry_limit
+        ✓ action == STAND_DOWN
+        ✓ fsm_state_after == FLAT
+        ✓ paper_trades_count_after == 2
+        ✓ risk_verdict == REJECTED
+        ✓ risk reasons contain REENTRY_LIMIT_HIT
+4/4 pipeline scenarios passed
+
+-- direct fault-injection (Modules 6/7/11, not yet wired into run_once) --
+[PASS] P3_direct_bad_tick_tsl_guard — Bad tick doesn't permanently disable the TSL
+[PASS] P3_direct_halted_squareoff — Halted market at square-off escalates, never 'flat'
+[PASS] P3_direct_stale_margin_informational — Stale broker margin doesn't block trading
+3/3 direct checks passed
+----------------------------------------------------------------------
+7/7 total scenarios passed
