@@ -23,6 +23,8 @@ ENRICHED_COLS = [
 _MONTHS = {1: "JAN", 2: "FEB", 3: "MAR", 4: "APR", 5: "MAY", 6: "JUN",
            7: "JUL", 8: "AUG", 9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC"}
 
+STEP_BY_INDEX = {"NIFTY": 50, "SENSEX": 100}   # real strike-ladder interval per index
+
 
 def _f(v):
     """Safe float (fixture stores TEXT; live stores native); '', None -> None."""
@@ -40,6 +42,28 @@ def _expiry_to_tsym(expiry: str) -> str:
     if not m:
         return ""
     return f"{m.group(1)}{m.group(2)}{m.group(3)[2:]}"
+
+
+_WEEKLY_MONTH = {10: "O", 11: "N", 12: "D"}   # Oct/Nov/Dec single-char; else the digit
+
+
+def _expiry_to_tok(expiry: str, index: str) -> str:
+    """Broker weekly tsym date-token, per index — NIFTY and SENSEX use COMPLETELY
+    different grammar (NIFTY: DD+Mon+YY e.g. '11JUN26'; SENSEX: YY+M+DD e.g. '26611'
+    for 11-JUN-2026), confirmed against real capture_sensex.sqlite tsyms. Applying
+    NIFTY's format to SENSEX silently matches zero rows — the exact bug class in
+    fix_sensex_option_symbols.md, found live here 2026-07-05 (SENSEX chain was
+    always empty)."""
+    if index == "SENSEX":
+        m = re.match(r"(\d{2})-([A-Z]{3})-(\d{4})", expiry or "")
+        if not m:
+            return ""
+        dd, mon, yyyy = m.groups()
+        month_num = {v: k for k, v in _MONTHS.items()}.get(mon)
+        if month_num is None:
+            return ""
+        return f"{yyyy[2:]}{_WEEKLY_MONTH.get(month_num, str(month_num))}{dd}"
+    return _expiry_to_tsym(expiry)
 
 
 @dataclass(frozen=True)
@@ -64,9 +88,10 @@ class PenguinReader:
     def _build(self, c, ind: dict, strike_window: int) -> Snapshot:
         atm = int(_f(ind["atm_strike"]) or 0)
         expiry = ind["expiry_weekly"] or ""
-        step = 50  # NIFTY
+        index = ind.get("instrument", "NIFTY")
+        step = STEP_BY_INDEX.get(index, 50)
         strikes = [atm + step * k for k in range(-strike_window, strike_window + 1)]
-        chain = self._option_chain(c, expiry, strikes)
+        chain = self._option_chain(c, expiry, strikes, index)
         ind = dict(ind)
         ind.update(self._structure_bars(c, ind["instrument"], ind["timestamp"]))
         return Snapshot(ts=ind["timestamp"], spot=_f(ind["spot"]) or 0.0, atm_strike=atm,
@@ -110,19 +135,19 @@ class PenguinReader:
         finally:
             c.close()
 
-    def _option_chain(self, c, expiry: str, strikes: list[int]) -> dict:
-        tok = _expiry_to_tsym(expiry)
+    def _option_chain(self, c, expiry: str, strikes: list[int], index: str = "NIFTY") -> dict:
+        tok = _expiry_to_tok(expiry, index)
         if not tok:
             return {}
         tmax = c.execute(
             "select max(timestamp) from option_prices where tsym like ?",
-            (f"NIFTY{tok}%",)).fetchone()[0]
+            (f"{index}{tok}%",)).fetchone()[0]
         if not tmax:
             return {}
         out = {}
         q = ("select strike, option_type, ltp, oi from option_prices "
              "where timestamp=? and tsym like ?")
-        for strike, otype, ltp, oi in c.execute(q, (tmax, f"NIFTY{tok}%")):
+        for strike, otype, ltp, oi in c.execute(q, (tmax, f"{index}{tok}%")):
             s = int(_f(strike) or 0)
             if s in strikes:
                 out[(s, otype)] = {"ltp": _f(ltp), "oi": _f(oi)}
@@ -146,9 +171,10 @@ class PenguinReader:
                 ind = dict(zip(ENRICHED_COLS, r))
                 atm = int(_f(ind["atm_strike"]) or 0)
                 expiry = ind["expiry_weekly"] or ""
-                step = 50
+                index = ind.get("instrument", "NIFTY")
+                step = STEP_BY_INDEX.get(index, 50)
                 strikes = [atm + step * k for k in range(-strike_window, strike_window + 1)]
-                chain = self._option_chain_asof(c, expiry, strikes, ind["timestamp"])
+                chain = self._option_chain_asof(c, expiry, strikes, ind["timestamp"], index)
                 ind_full = dict(ind)
                 ind_full.update(self._structure_bars(c, ind["instrument"], ind["timestamp"]))
                 out.append(Snapshot(
@@ -159,7 +185,8 @@ class PenguinReader:
         finally:
             c.close()
 
-    def _option_chain_asof(self, c, expiry: str, strikes: list[int], as_of_ts: str) -> dict:
+    def _option_chain_asof(self, c, expiry: str, strikes: list[int], as_of_ts: str,
+                           index: str = "NIFTY") -> dict:
         """Per-strike latest price <= as_of_ts — the asof-safe counterpart to
         _option_chain(), which always uses today's global max timestamp.
 
@@ -168,7 +195,7 @@ class PenguinReader:
         it last traded at days earlier (confirmed: a real case reached back 3 calendar
         days to a Friday-evening post-close tick and used it as a Monday entry price)
         — exactly the fabrication build_order() already refuses to do live."""
-        tok = _expiry_to_tsym(expiry)
+        tok = _expiry_to_tok(expiry, index)
         if not tok:
             return {}
         date = as_of_ts[:10]
@@ -179,16 +206,16 @@ class PenguinReader:
                     "select ltp, oi from option_prices where strike=? and option_type=? "
                     "and tsym like ? and timestamp <= ? and timestamp >= ? "
                     "order by timestamp desc limit 1",
-                    (s, right, f"NIFTY{tok}%", as_of_ts, date)).fetchone()
+                    (s, right, f"{index}{tok}%", as_of_ts, date)).fetchone()
                 if row and row[0] is not None:
                     out[(s, right)] = {"ltp": _f(row[0]), "oi": _f(row[1])}
         return out
 
     def latest_price_for_asof(self, expiry: str, strike: int, option_type: str,
-                               as_of_ts: str) -> tuple | None:
+                               as_of_ts: str, index: str = "NIFTY") -> tuple | None:
         """asof-safe counterpart to latest_price_for() — for replaying check_exit()
         against a simulated historical clock instead of the real live moment."""
-        tok = _expiry_to_tsym(expiry)
+        tok = _expiry_to_tok(expiry, index)
         if not tok:
             return None
         c = self._connect()
@@ -196,19 +223,20 @@ class PenguinReader:
             row = c.execute(
                 "select ltp, timestamp from option_prices where strike=? and option_type=? "
                 "and tsym like ? and timestamp <= ? order by timestamp desc limit 1",
-                (strike, option_type, f"NIFTY{tok}%", as_of_ts)).fetchone()
+                (strike, option_type, f"{index}{tok}%", as_of_ts)).fetchone()
             return (_f(row[0]), row[1]) if row and row[0] is not None else None
         finally:
             c.close()
 
-    def latest_price_for(self, expiry: str, strike: int, option_type: str) -> tuple | None:
+    def latest_price_for(self, expiry: str, strike: int, option_type: str,
+                         index: str = "NIFTY") -> tuple | None:
         """Independent per-leg latest price — for exit-checking an EXISTING position,
         not for a fresh chain snapshot. _option_chain() filters to one shared max
         timestamp across all strikes, which silently drops a leg whose last tick is
         older than another leg's (confirmed live: a deep-OTM hedge leg can go a full
         day+ without a fresh tick while the near-ATM short leg updates every minute).
         Returns (ltp, timestamp) or None if this strike/expiry has no price at all."""
-        tok = _expiry_to_tsym(expiry)
+        tok = _expiry_to_tok(expiry, index)
         if not tok:
             return None
         c = self._connect()
@@ -216,7 +244,7 @@ class PenguinReader:
             row = c.execute(
                 "select ltp, timestamp from option_prices where strike=? and option_type=? "
                 "and tsym like ? order by timestamp desc limit 1",
-                (strike, option_type, f"NIFTY{tok}%")).fetchone()
+                (strike, option_type, f"{index}{tok}%")).fetchone()
             return (_f(row[0]), row[1]) if row and row[0] is not None else None
         finally:
             c.close()

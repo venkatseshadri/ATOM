@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Run ONE Phase-1 cycle against live (or fixture) Penguin NIFTY and print the result.
+"""Run ONE Phase-1/2 cycle against live (or fixture) Penguin and print the result.
+
+Index is chosen by the day-of-week 0-1 DTE rule (Board, 2026-07-05): NIFTY's weekly
+expires Tuesday (Fri/Mon/Tue = 0-1 DTE), SENSEX's expires Thursday (Wed/Thu = 0-1 DTE).
+Real per-index step/lot/symbol come from Module 12 (InstrumentMaster) on every cycle,
+for both indices — not just an option, the live default now.
 
 Usage:
-  python3 run_live_once.py            # live capture_nifty.sqlite
-  python3 run_live_once.py --fixture  # deterministic test fixture
+  python3 run_live_once.py              # live capture DB for today's index
+  python3 run_live_once.py --fixture     # deterministic test fixture, same index rule
+  python3 run_live_once.py --index NIFTY # force an index (override the weekday rule)
 """
 import sys
 
@@ -13,23 +19,46 @@ from datetime import datetime   # noqa: E402
 
 from atom import config, lights, phase1       # noqa: E402
 from atom.atom_state import AtomState      # noqa: E402
+from atom.instrument import InstrumentMaster  # noqa: E402
 from atom.penguin import PenguinReader     # noqa: E402
 from atom.runner import run_once           # noqa: E402
+from atom.telemetry import Telemetry       # noqa: E402
 
-LIVE = "/home/trading_ceo/python-trader/varaha/data/capture_nifty.sqlite"
-FIXTURE = "tests/fixtures/capture_nifty_fixture.sqlite"
+INDEX_CONFIG = {
+    "NIFTY": {
+        "live_db": "/home/trading_ceo/python-trader/varaha/data/capture_nifty.sqlite",
+        "fixture_db": "tests/fixtures/capture_nifty_fixture.sqlite",
+        "state": "data/atom_state.sqlite",              # unchanged path — live NIFTY history
+        "state_fixture": "data/atom_state_fixture.sqlite",
+    },
+    "SENSEX": {
+        "live_db": "/home/trading_ceo/python-trader/varaha/data/capture_sensex.sqlite",
+        "fixture_db": "tests/fixtures/capture_sensex_fixture.sqlite",
+        "state": "data/atom_state_sensex.sqlite",       # separate FSM/position state
+        "state_fixture": "data/atom_state_sensex_fixture.sqlite",
+    },
+}
+
+
+def _forced_index() -> str | None:
+    if "--index" in sys.argv:
+        return sys.argv[sys.argv.index("--index") + 1].upper()
+    return None
 
 
 def main() -> None:
     fixture = "--fixture" in sys.argv
-    db = FIXTURE if fixture else LIVE
+    index = _forced_index() or phase1.index_for_weekday()
+    icfg = INDEX_CONFIG[index]
+    db = icfg["fixture_db"] if fixture else icfg["live_db"]
     reader = PenguinReader(db)
+    im = InstrumentMaster(Telemetry(echo=False))
     # fixture is off-hours → its own fresh state + pin 'now' to the bar so it's "fresh"
     now = None
     max_stale = 90.0
     if fixture:
         # deterministic demo path stays pinned to code defaults, not live-tunable config
-        state = AtomState("data/atom_state_fixture.sqlite")
+        state = AtomState(icfg["state_fixture"])
         state.reset()
         snap = reader.latest_snapshot()
         now = datetime.fromisoformat(snap.ts)
@@ -41,10 +70,10 @@ def main() -> None:
         cfg = config.load_config()
         phase1.configure(cfg)
         lights.configure(cfg)
-        state = AtomState("data/atom_state.sqlite")
+        state = AtomState(icfg["state"])
 
-    print(f"=== ATOM Phase 1 — one cycle ({'fixture' if fixture else 'LIVE'}) ===")
-    r = run_once(reader, state, now=now, max_stale_sec=max_stale)
+    print(f"=== ATOM Phase 1/2 — one cycle ({'fixture' if fixture else 'LIVE'}, {index}) ===")
+    r = run_once(reader, state, now=now, max_stale_sec=max_stale, im=im)
 
     if r["action"] == "EXIT":
         ec, pos = r["exit_check"], r["position"]
@@ -75,7 +104,7 @@ def main() -> None:
     ex, ind, basis, lg = r["explain"], r["indicators"], r["basis"], r.get("lights")
 
     print(f"\n{RULE}")
-    print(f"bar {r['bar_ts']}  —  NIFTY spot ₹{r['spot']}  ATM {r['atm']}  expiry {r['expiry']}")
+    print(f"bar {r['bar_ts']}  —  {index} spot ₹{r['spot']}  ATM {r['atm']}  expiry {r['expiry']}")
     print(RULE)
 
     print("1) INDICATORS  (read from Penguin, real market data — ATOM does not recompute)")

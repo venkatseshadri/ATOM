@@ -229,7 +229,7 @@ class _FakeReader:
     def __init__(self, prices: dict):
         self.prices = prices   # {(strike, right): (ltp, ts)}
 
-    def latest_price_for(self, expiry, strike, right):
+    def latest_price_for(self, expiry, strike, right, index="NIFTY"):
         return self.prices.get((strike, right))
 
 

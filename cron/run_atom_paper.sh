@@ -1,6 +1,8 @@
 #!/bin/bash
-# ATOM Phase 1 — paper-only live cycle (one-shot, cron-fired per minute).
-# Reads Penguin capture_nifty.sqlite READ-ONLY, writes only atom/data/atom_state.sqlite.
+# ATOM Phase 1/2 — paper-only live cycle (one-shot, cron-fired per minute).
+# Index picked by day-of-week 0-1 DTE rule (run_live_once.py): NIFTY Fri/Mon/Tue,
+# SENSEX Wed/Thu. Reads that day's Penguin capture_{index}.sqlite READ-ONLY, writes
+# only atom/data/atom_state{,_sensex}.sqlite (separate FSM/position state per index).
 # NO broker, NO credentials (Phase 3 = broker routing). flock = one cycle at a time.
 #
 # Usage: registered under ROOT's crontab (not trading_ceo — there is no trading_ceo

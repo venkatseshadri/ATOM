@@ -24,8 +24,8 @@ class _AsofReader:
         self._inner = inner
         self.as_of_ts = None
 
-    def latest_price_for(self, expiry, strike, option_type):
-        return self._inner.latest_price_for_asof(expiry, strike, option_type, self.as_of_ts)
+    def latest_price_for(self, expiry, strike, option_type, index="NIFTY"):
+        return self._inner.latest_price_for_asof(expiry, strike, option_type, self.as_of_ts, index)
 
 
 def replay(start: str, end: str, db_path: str = LIVE) -> list[dict]:
@@ -67,7 +67,8 @@ def replay(start: str, end: str, db_path: str = LIVE) -> list[dict]:
             open_position = {
                 "ts": snap.ts, "structure": order.structure, "net_credit": order.net_credit,
                 "max_loss": order.max_loss, "lot": order.lot, "legs": order.legs,
-                "expiry": order.expiry, "exit_ts": None, "exit_reason": None,
+                "expiry": order.expiry, "index": order.index,
+                "exit_ts": None, "exit_reason": None,
                 "realized_pnl": None,
                 "entry_regime": decision["regime"], "entry_confidence": decision["confidence"],
                 "entry_votes": decision["votes"],

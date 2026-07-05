@@ -27,7 +27,7 @@ def _age_sec(bar_ts: str, now: datetime) -> float:
 
 
 def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = None,
-             max_stale_sec: float = 90.0) -> dict:
+             max_stale_sec: float = 90.0, im=None) -> dict:
     now = now or datetime.now()
     fsm_state, last_bar_ts = state.load()
 
@@ -59,7 +59,7 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
                 return {"action": "EXIT", "reason": exit_check.reason, "bar_ts": snap.ts,
                         "fsm_state": "FLAT", "position": position, "exit_check": exit_check}
 
-    new_state, decision, order = phase1.cycle(fsm_state, snap)
+    new_state, decision, order = phase1.cycle(fsm_state, snap, im)
 
     state.checkpoint_and_record(new_state, snap.ts, order, now.isoformat(), decision)
 
