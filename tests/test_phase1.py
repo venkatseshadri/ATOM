@@ -3,6 +3,8 @@ real-premium construction + freshness gate + state)."""
 import os
 from datetime import datetime
 
+import pytest
+
 from atom import phase1
 from atom.atom_state import AtomState
 from atom.penguin import PenguinReader
@@ -287,6 +289,47 @@ def test_check_exit_missing_price_does_not_falsely_trigger_sl_tp():
     assert not ec.triggered and ec.current_pnl is None
 
 
+# ---- Phase 3: check_exit(levels_state=...) real TSL path (opt-in, legacy unaffected) --
+
+def test_check_exit_levels_state_none_is_byte_identical_to_legacy():
+    """Omitting levels_state (every test above) must match passing an explicit None."""
+    a = phase1.check_exit(_POSITION, _reader_at(220.0, 290.0), "2026-07-02T10:00:00")
+    b = phase1.check_exit(_POSITION, _reader_at(220.0, 290.0), "2026-07-02T10:00:00",
+                          levels_state=None)
+    assert a == b
+
+
+def test_check_exit_levels_state_fresh_matches_legacy_thresholds():
+    """A fresh (never-armed) levels_state must produce the same sl/tp as the legacy
+    static formula — Module 6's initial_levels() uses the identical pct-of-max-loss /
+    pct-of-credit math."""
+    ec = phase1.check_exit(_POSITION, _reader_at(220.0, 290.0), "2026-07-02T10:00:00",
+                           levels_state={})
+    assert ec.sl_threshold == -round(0.35 * 9630.0, 2)
+    assert ec.tp_threshold == round(0.50 * 5370.0, 2)
+    assert ec.tsl_armed is False
+
+
+def test_check_exit_tsl_arms_trails_and_never_loosens_across_cycles():
+    """Simulates the real caller loop: thread the returned tsl/tsl_armed/high_water_pnl
+    into the next cycle's levels_state, exactly as runner.py will via AtomState."""
+    levels_state = {}
+    # cycle 1: strong favorable move (~60% of credit captured) -> arms + trails
+    ec1 = phase1.check_exit(_POSITION, _reader_at(10.0, 38.64), "2026-07-02T10:00:00",
+                            levels_state=levels_state)
+    assert ec1.tsl_armed is True and ec1.tsl is not None
+    tight = ec1.tsl
+
+    # cycle 2: reverses hard (~35% captured) — must not un-arm or loosen
+    levels_state = {"tsl": ec1.tsl, "tsl_armed": ec1.tsl_armed,
+                    "high_water_pnl": ec1.high_water_pnl}
+    ec2 = phase1.check_exit(_POSITION, _reader_at(10.0, 56.54), "2026-07-02T10:01:00",
+                            levels_state=levels_state)
+    assert ec2.tsl_armed is True
+    assert ec2.tsl == tight   # ratchet: unchanged, never loosened
+    assert not ec2.triggered   # pnl still above the trailed floor -> holding, not exiting
+
+
 def test_record_exit_and_checkpoint_atomic(tmp_path):
     state = AtomState(str(tmp_path / "s.sqlite"))
     state.checkpoint_and_record("SINGLE_SPREAD", "2026-07-01T09:44:00",
@@ -306,6 +349,73 @@ def test_record_exit_and_checkpoint_atomic(tmp_path):
     assert state.last_open_position() is None          # closed, no longer "open"
 
 
+# ---- Phase 3: run_once(use_tsl=, risk_gate=) opt-in wiring, legacy default off ----
+
+def test_run_once_defaults_are_legacy_behavior(tmp_path):
+    """use_tsl/risk_gate default False — confirms the opt-in flags don't change
+    anything unless a caller explicitly asks for them."""
+    reader = PenguinReader(FIX)
+    state = AtomState(str(tmp_path / "s.sqlite"))
+    r = run_once(reader, state, now=_now_at_bar(reader), max_stale_sec=1e9)
+    assert r["risk_verdict"] is None
+
+
+def test_run_once_use_tsl_persists_ratchet_when_not_triggered(tmp_path, monkeypatch):
+    """Runner's responsibility under test: when check_exit doesn't trigger and
+    use_tsl=True, the returned ratchet state must be written back via
+    update_stop_state so the NEXT (separate) cron process reloads it."""
+    reader = PenguinReader(FIX)
+    state = AtomState(str(tmp_path / "s.sqlite"))
+    state.checkpoint_and_record("SINGLE_SPREAD", "2000-01-01T00:00:00",
+                                phase1.PaperOrder("bull_put_spread",
+                                    (("BUY", 23750, "PE", 233.75), ("SELL", 23950, "PE", 305.35)),
+                                    5370.0, 9630.0, 75, "28-JUL-2026"),
+                                "2000-01-01T00:00:00.000000", {"regime": "TREND_UP", "confidence": 0.75})
+
+    monkeypatch.setattr(phase1, "check_exit",
+                        lambda position, rdr, bar_ts, levels_state=None: phase1.ExitCheck(
+                            False, None, 3200.0, 200.0, bar_ts, 100.0, bar_ts, -1000.0, 2685.0,
+                            False, tsl=1500.0, tsl_armed=True, high_water_pnl=3200.0))
+
+    r = run_once(reader, state, now=_now_at_bar(reader), max_stale_sec=1e9, use_tsl=True)
+    assert r["action"] not in ("EXIT",)
+    pos = state.last_open_position()
+    assert pos["tsl"] == 1500.0 and pos["tsl_armed"] is True and pos["high_water_pnl"] == 3200.0
+
+
+def test_run_once_risk_gate_blocks_over_cap_entry(tmp_path):
+    """A tiny capital forces every gate (margin/deployment/at-risk) to reject even
+    1 lot — the OPEN must be downgraded to STAND_DOWN and no trade recorded."""
+    phase1.configure({**phase1.config.DEFAULTS, "regime.entry.min_confidence": 0.0})
+    try:
+        reader = PenguinReader(FIX)
+        state = AtomState(str(tmp_path / "s.sqlite"))
+        r = run_once(reader, state, now=_now_at_bar(reader), max_stale_sec=1e9,
+                    risk_gate=True, capital=100.0)
+        if r["order"] is not None:
+            pytest.fail("risk_gate=True with capital=100 should never let an order through")
+        assert r["risk_verdict"] is not None and r["risk_verdict"].verdict == "REJECTED"
+        n = state._c().execute("select count(*) from paper_trades").fetchone()[0]
+        assert n == 0
+    finally:
+        phase1.configure(dict(phase1.config.DEFAULTS))
+
+
+def test_run_once_risk_gate_allows_clean_entry(tmp_path):
+    """Ample capital: risk_gate=True must not block a trade that would have opened
+    anyway under the legacy path."""
+    phase1.configure({**phase1.config.DEFAULTS, "regime.entry.min_confidence": 0.0})
+    try:
+        reader = PenguinReader(FIX)
+        state = AtomState(str(tmp_path / "s.sqlite"))
+        r = run_once(reader, state, now=_now_at_bar(reader), max_stale_sec=1e9,
+                    risk_gate=True, capital=200000.0)
+        assert r["action"] == "OPEN"
+        assert r["risk_verdict"].verdict == "APPROVED"
+    finally:
+        phase1.configure(dict(phase1.config.DEFAULTS))
+
+
 def test_run_once_exit_takes_priority_over_new_entry_check(tmp_path, monkeypatch):
     """When SINGLE_SPREAD and exit triggers, run_once must close+return EXIT without
     ever calling decide()/classify_regime() for a new entry on the same tick."""
@@ -320,7 +430,7 @@ def test_run_once_exit_takes_priority_over_new_entry_check(tmp_path, monkeypatch
                                  now.isoformat(), {"regime": "TREND_UP", "confidence": 0.75})
 
     monkeypatch.setattr(phase1, "check_exit",
-                        lambda position, rdr, bar_ts: phase1.ExitCheck(
+                        lambda position, rdr, bar_ts, levels_state=None: phase1.ExitCheck(
                             True, "TP", 5000.0, 200.0, bar_ts, 100.0, bar_ts, -1000.0, 2000.0, False))
     r = run_once(reader, state, now=now, max_stale_sec=1e9)
     assert r["action"] == "EXIT" and r["reason"] == "TP"

@@ -41,27 +41,57 @@ orchestrator's illustrative skeleton pass).
   chain data Module 4 already consumes (no fabrication) — there's no live broker
   connection to place real orders on yet.
 
+## Live wiring (2026-07-05, same session — user asked to validate TSL/SENSEX live)
+`runner.run_once()` gained two opt-in flags, both defaulting `False` (every existing
+caller — replay.py, the harness, all Phase 1/2 tests — is byte-identical unless it
+explicitly asks):
+- `use_tsl=True` — routes exit-checking through `phase1.check_exit(levels_state=...)`
+  (Module 6's real TSL, not the old static-SL/TP-only path). Ratchet state (`tsl`,
+  `tsl_armed`, `high_water_pnl`) persists via new `AtomState` columns
+  (`update_stop_state()`/`last_open_position()`) so a fresh cron process reloads the
+  tight stop instead of recomputing from scratch.
+- `risk_gate=True` — after `build_order()` proposes an OPEN, gates it through Module 5
+  (`risk.evaluate()`) using `AtomState.derive_account()` (real realized P&L / open-count
+  / re-entry-count derived from `paper_trades`, not a separately-tracked ledger). A
+  `REJECTED` verdict downgrades the cycle to `STAND_DOWN` — no trade recorded.
+
+`run_live_once.py` (the actual cron entrypoint) now passes both `True` for every cycle,
+both fixture and live, and prints the risk verdict + TSL floor/high-water when active.
+`AtomState.paper_trades` also gained an `index_name` column (Phase 2's known gap —
+SENSEX trades were never persisted with their index) — NULL-safe, defaults to NIFTY for
+pre-existing rows.
+
+**Not wired:** Module 7's calendar-based entry-window/day-type check is NOT used to gate
+`decide()` yet — `decide()` still uses its own hardcoded EOD-cutoff string comparison
+(unchanged from Phase 1). Session Lifecycle's richer day-type/expiry/halt awareness is
+built and tested standalone but not yet the thing deciding whether `decide()` may open.
+Module 11's session-health check is also not consulted in the live cycle yet (it's a
+secondary signal per its own design — bar-freshness already gates on stale data).
+
 ## Known gaps (honest, not fixed here)
 - **Greek-based SL (6.1.3) and greek-driven strike selection remain N/A** — same root
   cause as Phase 2: Penguin has no per-strike delta/IV, only ltp/oi/volume.
 - **§13.4 (modify), §13.9 (broker reconciliation), §13.10 (ack/TTL timeouts) are
   thin/deferred** — fundamentally about a live broker round-trip that doesn't exist
   yet. Documented, not silently skipped.
-- **Not wired into `runner.py`/the live cron path yet.** Same phased-rollout discipline
-  as Phase 2 (Module 12/4 were built + proven before being wired into `run_live_once.py`
-  in a separate, reviewable step). `test_phase3_integration.py` proves the modules compose
-  correctly; wiring them into the actual per-minute cycle is the next concrete step once
-  GATE 3 is reviewed.
-- **`atom_state.py` has no persistence for Module 6's ratchet state or Module 7's
-  entry-latch/square-off-level** — the pure functions are correct and tested (including a
-  simulated restart-reload scenario), but nothing yet writes/reads them to/from
-  `AtomState` across real cron invocations. Needed before live wiring.
+- **`derive_account()`'s `peak_equity` is today's starting capital, not a real
+  multi-day high-water mark** — no historical equity curve is persisted anywhere, so
+  the DD-floor gate only reacts to *today's* realized losses, not a true peak-to-trough
+  drawdown across days. Flagged, not silently glossed over.
+- **`deployed` is always reported as 0** — ATOM doesn't simulate real margin-blocking,
+  so the deployment-cap gate never actually binds in practice; only the at-risk and
+  margin-sufficiency gates (which use `max_loss`, real) are load-bearing today.
+- Module 7 (entry-window authority) and Module 11 (session health) are built + tested
+  but not yet consulted by the live cycle (see "Live wiring" above).
 
 ## Tests
-102 new tests across 6 files (186 total):
+110 new tests across 8 files (199 total):
 - `test_session_lifecycle.py` (27), `test_risk.py` (25), `test_stop_management.py` (17),
   `test_order_execution.py` (22), `test_connectivity.py` (9),
-  `test_phase3_integration.py` (2 — the full lifecycle + risk-gate-blocks-before-fill).
+  `test_phase3_integration.py` (2), `test_atom_state_phase3.py` (6 — index/TSL
+  persistence, account derivation), plus 4 new tests in `test_phase1.py` covering
+  `run_once(use_tsl=, risk_gate=)`'s wiring behavior and 3 covering `check_exit`'s
+  `levels_state` param directly.
 - `logs/phase3/*.log` — real pytest output per module + `narrated_expected_vs_actual.log`,
   a human-readable GIVEN/WHEN/EXPECT/ACTUAL walkthrough of the key acceptance scenarios,
   regenerated via `tools/phase3_demo_log.py` (zero mismatches).
@@ -69,5 +99,5 @@ orchestrator's illustrative skeleton pass).
 ## Not done
 - BUILD_PLAN.md Phase 3 DoD checkboxes / GATES.md GATE 3 row — Board sign-off, not mine
   to check.
-- Live wiring into `runner.py`/`run_live_once.py`/cron (see gaps above).
-- `atom_state.py` schema additions for Module 6/7 persisted state.
+- Module 7/11 live consultation (see "Live wiring" above).
+- Real multi-day equity-curve tracking for a true drawdown-floor gate.

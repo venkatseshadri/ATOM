@@ -63,6 +63,7 @@ def main() -> None:
         snap = reader.latest_snapshot()
         now = datetime.fromisoformat(snap.ts)
         max_stale = 1e9
+        cfg = dict(config.DEFAULTS)
     else:
         # config/atom.conf was never actually wired to the live path before this —
         # editing it had zero effect. Reload fresh every cycle (new process each cron
@@ -72,8 +73,9 @@ def main() -> None:
         lights.configure(cfg)
         state = AtomState(icfg["state"])
 
-    print(f"=== ATOM Phase 1/2 — one cycle ({'fixture' if fixture else 'LIVE'}, {index}) ===")
-    r = run_once(reader, state, now=now, max_stale_sec=max_stale, im=im)
+    print(f"=== ATOM Phase 1/2/3 — one cycle ({'fixture' if fixture else 'LIVE'}, {index}) ===")
+    r = run_once(reader, state, now=now, max_stale_sec=max_stale, im=im,
+                use_tsl=True, risk_gate=True, capital=cfg.get("risk.deploy.inr", 200000.0))
 
     if r["action"] == "EXIT":
         ec, pos = r["exit_check"], r["position"]
@@ -89,6 +91,8 @@ def main() -> None:
               f"short={ec.short_ltp} (as of {ec.short_ltp_ts})")
         print(f"  SL threshold=₹{ec.sl_threshold:,.0f}  TP threshold=₹{ec.tp_threshold:,.0f}  "
               f"is_eod={ec.is_eod}")
+        if ec.tsl_armed:
+            print(f"  TSL was armed: floor=₹{ec.tsl:,.0f}  high-water=₹{ec.high_water_pnl:,.0f}")
         print(f"  => realized P&L = ₹{ec.current_pnl:,.0f}" if ec.current_pnl is not None
               else "  => realized P&L unknown (forced EOD close with no price data)")
         print(RULE)
@@ -158,16 +162,21 @@ def main() -> None:
             print(f"     live monitor: P&L={pnl_str}  SL@₹{ec.sl_threshold:,.0f}  "
                   f"TP@₹{ec.tp_threshold:,.0f}  is_eod={ec.is_eod}  "
                   f"hedge={ec.hedge_ltp}({ec.hedge_ltp_ts})  short={ec.short_ltp}({ec.short_ltp_ts})")
+            if ec.tsl_armed:
+                print(f"     TSL ARMED: floor=₹{ec.tsl:,.0f}  high-water=₹{ec.high_water_pnl:,.0f}")
     print(ex["decision"])
 
     print(f"\n{RULE}")
+    rv = r.get("risk_verdict")
+    if rv:
+        print(f"MODULE 5 RISK GATE: {rv.verdict}  qty={rv.permitted_qty}  reasons={rv.reasons}")
     order = r.get("order")
     if order:
         print("RESULT: OPEN — paper order placed (PAPER — no broker)")
         for action, strike, right, ltp in order.legs:
             print(f"   {action} {strike}{right} @ ₹{ltp}")
         print(f"   net credit ₹{order.net_credit:,.0f}  max loss ₹{order.max_loss:,.0f}  "
-              f"lot {order.lot}")
+              f"lot {order.lot}  index={order.index}")
         if not fixture:
             _append_order(r, order)
     else:

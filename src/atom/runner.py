@@ -27,7 +27,12 @@ def _age_sec(bar_ts: str, now: datetime) -> float:
 
 
 def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = None,
-             max_stale_sec: float = 90.0, im=None) -> dict:
+             max_stale_sec: float = 90.0, im=None, use_tsl: bool = False,
+             risk_gate: bool = False, capital: float = 200000.0) -> dict:
+    """`use_tsl`/`risk_gate`: opt-in Phase 3 wiring (Modules 6 and 5). Both default
+    False — omitted, behaviour is byte-identical to pre-Phase-3 (every existing caller,
+    incl. replay.py and the harness, keeps working unchanged). `run_live_once.py` (the
+    actual cron entrypoint) passes both True."""
     now = now or datetime.now()
     fsm_state, last_bar_ts = state.load()
 
@@ -50,7 +55,12 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
     if fsm_state == "SINGLE_SPREAD":
         position = state.last_open_position()
         if position is not None:
-            exit_check = phase1.check_exit(position, reader, snap.ts)
+            levels_state = None
+            if use_tsl:
+                levels_state = {"tsl": position.get("tsl"),
+                               "tsl_armed": position.get("tsl_armed", False),
+                               "high_water_pnl": position.get("high_water_pnl")}
+            exit_check = phase1.check_exit(position, reader, snap.ts, levels_state=levels_state)
             if exit_check.triggered:
                 exit_legs = {"hedge_ltp": exit_check.hedge_ltp, "short_ltp": exit_check.short_ltp}
                 state.record_exit_and_checkpoint(position["ts"], now.isoformat(),
@@ -58,8 +68,26 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
                                                   exit_legs, snap.ts)
                 return {"action": "EXIT", "reason": exit_check.reason, "bar_ts": snap.ts,
                         "fsm_state": "FLAT", "position": position, "exit_check": exit_check}
+            if use_tsl:
+                # persist Module 6's ratchet so next cycle reloads the tight stop
+                # rather than recomputing from scratch (6.3.3/6.7.1)
+                state.update_stop_state(position["ts"], exit_check.tsl, exit_check.tsl_armed,
+                                        exit_check.high_water_pnl)
 
     new_state, decision, order = phase1.cycle(fsm_state, snap, im)
+
+    risk_verdict = None
+    if risk_gate and order is not None:
+        from . import risk as risk_mod
+        account = state.derive_account(capital, snap.ts[:10])
+        plan = risk_mod.plan_from_paper_order(order)
+        risk_verdict = risk_mod.evaluate(plan, account)
+        if risk_verdict.permitted_qty == 0:
+            # Module 5 blocked this — do not record a trade this cycle
+            order = None
+            new_state = fsm_state
+            decision = {**decision, "intent": "STAND_DOWN",
+                       "structure": f"risk_gate_blocked:{','.join(risk_verdict.reasons)}"}
 
     state.checkpoint_and_record(new_state, snap.ts, order, now.isoformat(), decision)
 
@@ -97,4 +125,5 @@ def run_once(reader: PenguinReader, state: AtomState, now: datetime | None = Non
                 "shadow_reason": shadow["reason"] if shadow else None,
                 "conviction_note": res.conviction_note},
             "indicators": {k: snap.ind.get(k) for k in ik},
-            "structure": decision["structure"], "order": order, "fsm_state": new_state}
+            "structure": decision["structure"], "order": order, "fsm_state": new_state,
+            "risk_verdict": risk_verdict}

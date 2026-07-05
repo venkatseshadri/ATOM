@@ -415,7 +415,7 @@ def build_order(structure: str, snap: Snapshot, im=None) -> PaperOrder | None:
 @dataclass(frozen=True)
 class ExitCheck:
     triggered: bool
-    reason: str | None          # "SL" | "TP" | "EOD" | None
+    reason: str | None          # "SL" | "TP" | "TSL" | "EOD" | None
     current_pnl: float | None   # None if either leg has no price at all (never abstains
                                  # SL/TP on stale-but-present data — only on missing data)
     hedge_ltp: float | None
@@ -425,13 +425,21 @@ class ExitCheck:
     sl_threshold: float
     tp_threshold: float
     is_eod: bool
+    tsl: float | None = None            # Phase 3: updated ratchet state, None = inactive
+    tsl_armed: bool = False              # (defaults preserve old callers' behavior exactly)
+    high_water_pnl: float | None = None
 
 
-def check_exit(position: dict, reader, bar_ts: str) -> ExitCheck:
+def check_exit(position: dict, reader, bar_ts: str, levels_state: dict | None = None) -> ExitCheck:
     """SL = risk.sl.pct of max_loss lost. TP = risk.tp.pct of net_credit captured.
     EOD = bar time-of-day >= session.eod.cutoff, forces exit regardless of P&L (a stale
     open position must not block the next session's entries — closes at best-available
     price even if that price is a day+ stale; still better than never closing).
+
+    `levels_state`: optional Phase 3 TSL ratchet state ({"tsl":.., "tsl_armed":..,
+    "high_water_pnl":..}), persisted by the caller across cycles (AtomState) — omitted
+    (default) means byte-identical Phase 1 behaviour (static SL/TP only, no TSL); every
+    existing caller keeps working unchanged.
 
     Per-leg prices come from PenguinReader.latest_price_for() — NOT the chain-snapshot's
     ATM-windowed chain, which won't contain a held strike once spot has drifted away, and
@@ -442,8 +450,6 @@ def check_exit(position: dict, reader, bar_ts: str) -> ExitCheck:
     expiry = position["expiry"]
     index = position.get("index", "NIFTY")
     max_loss, net_credit, lot = position["max_loss"], position["net_credit"], position["lot"]
-    sl_threshold = -round(CFG.get("risk.sl.pct", 35) / 100.0 * max_loss, 2)
-    tp_threshold = round(CFG.get("risk.tp.pct", 50) / 100.0 * net_credit, 2)
     is_eod = bar_ts[11:16] >= CFG.get("session.eod.cutoff", "15:20")
 
     hedge = reader.latest_price_for(expiry, h_k, h_r, index)
@@ -457,18 +463,39 @@ def check_exit(position: dict, reader, bar_ts: str) -> ExitCheck:
         cost_to_close_per_unit = short_ltp - hedge_ltp
         current_pnl = round((entry_credit_per_unit - cost_to_close_per_unit) * lot, 2)
 
-    def _result(triggered: bool, reason: str | None) -> ExitCheck:
-        return ExitCheck(triggered, reason, current_pnl, hedge_ltp, hedge_ts,
-                         short_ltp, short_ts, sl_threshold, tp_threshold, is_eod)
+    if levels_state is None:
+        # legacy path — byte-identical to pre-Phase-3 behaviour
+        sl_threshold = -round(CFG.get("risk.sl.pct", 35) / 100.0 * max_loss, 2)
+        tp_threshold = round(CFG.get("risk.tp.pct", 50) / 100.0 * net_credit, 2)
 
-    if is_eod:
-        return _result(True, "EOD")
+        def _result(triggered: bool, reason: str | None) -> ExitCheck:
+            return ExitCheck(triggered, reason, current_pnl, hedge_ltp, hedge_ts,
+                             short_ltp, short_ts, sl_threshold, tp_threshold, is_eod)
+
+        if is_eod:
+            return _result(True, "EOD")
+        if current_pnl is not None:
+            if current_pnl <= sl_threshold:
+                return _result(True, "SL")
+            if current_pnl >= tp_threshold:
+                return _result(True, "TP")
+        return _result(False, None)
+
+    # Phase 3 real path: Module 6 (stop_management) with persisted TSL ratchet
+    from . import stop_management as sm
+    expiry_date = datetime.strptime(expiry, "%d-%b-%Y").date()
+    is_expiry_today = expiry_date == datetime.fromisoformat(bar_ts).date()
+    lv = sm.initial_levels(net_credit, max_loss, CFG, is_expiry_today=is_expiry_today)
+    lv = sm.Levels(lv.sl, lv.tp, levels_state.get("tsl"), levels_state.get("tsl_armed", False),
+                  levels_state.get("high_water_pnl"))
     if current_pnl is not None:
-        if current_pnl <= sl_threshold:
-            return _result(True, "SL")
-        if current_pnl >= tp_threshold:
-            return _result(True, "TP")
-    return _result(False, None)
+        lv = sm.update_levels(lv, current_pnl, net_credit, CFG)
+        trigger = sm.check_breach(current_pnl, lv, is_eod, net_credit, CFG)
+    else:
+        trigger = sm.ExitTrigger(is_eod, "EOD" if is_eod else None, None)
+    return ExitCheck(trigger.triggered, trigger.reason, current_pnl, hedge_ltp, hedge_ts,
+                     short_ltp, short_ts, lv.sl, lv.tp, is_eod,
+                     lv.tsl, lv.tsl_armed, lv.high_water_pnl)
 
 
 # ---- the cycle (pure): state + snapshot -> new_state, decision, paper_order ---

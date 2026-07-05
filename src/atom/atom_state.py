@@ -35,13 +35,15 @@ class AtomState:
         c.commit(); c.close()
 
     def _migrate_paper_trades(self, c) -> None:
-        """Add exit-tracking columns to an existing paper_trades table (the live DB
-        already had one real open trade under the old 9-column schema before SL/TP/EOD
-        existed — ALTER TABLE ADD COLUMN preserves that row, just backfills NULLs)."""
+        """Add exit-tracking + Phase 3 ratchet columns to an existing paper_trades table
+        (the live DB already had real trades under earlier schemas — ALTER TABLE ADD
+        COLUMN preserves those rows, just backfills NULLs)."""
         existing = {row[1] for row in c.execute("PRAGMA table_info(paper_trades)")}
         for col, coltype in [("expiry", "TEXT"), ("exit_ts", "TEXT"),
                               ("exit_reason", "TEXT"), ("realized_pnl", "REAL"),
-                              ("exit_legs", "TEXT")]:
+                              ("exit_legs", "TEXT"), ("index_name", "TEXT"),
+                              ("tsl", "REAL"), ("tsl_armed", "INTEGER"),
+                              ("high_water_pnl", "REAL")]:
             if col not in existing:
                 c.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {coltype}")
 
@@ -79,11 +81,12 @@ class AtomState:
             if order is not None:
                 c.execute(
                     "INSERT INTO paper_trades "
-                    "(ts,bar_ts,structure,net_credit,max_loss,lot,legs,regime,confidence,expiry) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "(ts,bar_ts,structure,net_credit,max_loss,lot,legs,regime,confidence,"
+                    "expiry,index_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (now, last_bar_ts, order.structure, order.net_credit,
                      order.max_loss, order.lot, json.dumps(order.legs),
-                     decision["regime"], decision["confidence"], order.expiry))
+                     decision["regime"], decision["confidence"], order.expiry,
+                     getattr(order, "index", "NIFTY")))
             c.commit()
         finally:
             c.close()
@@ -120,17 +123,68 @@ class AtomState:
 
     def last_open_position(self) -> dict | None:
         """Most recent trade with no exit recorded yet — for log display when fsm !=
-        FLAT (which trade is blocking new entries) and for exit-checking."""
+        FLAT (which trade is blocking new entries) and for exit-checking. Includes
+        Phase 3's index + persisted TSL ratchet state (tsl/tsl_armed/high_water_pnl),
+        all NULL-safe for rows written before those columns existed."""
         c = self._c()
         try:
             row = c.execute(
-                "select ts, bar_ts, structure, net_credit, max_loss, lot, legs, expiry "
+                "select ts, bar_ts, structure, net_credit, max_loss, lot, legs, expiry, "
+                "index_name, tsl, tsl_armed, high_water_pnl "
                 "from paper_trades where exit_ts is null order by ts desc limit 1").fetchone()
             if not row:
                 return None
-            ts, bar_ts, structure, net_credit, max_loss, lot, legs, expiry = row
+            (ts, bar_ts, structure, net_credit, max_loss, lot, legs, expiry, index_name,
+             tsl, tsl_armed, high_water_pnl) = row
             return {"ts": ts, "bar_ts": bar_ts, "structure": structure,
                     "net_credit": net_credit, "max_loss": max_loss, "lot": lot,
-                    "legs": json.loads(legs), "expiry": expiry}
+                    "legs": json.loads(legs), "expiry": expiry,
+                    "index": index_name or "NIFTY",
+                    "tsl": tsl, "tsl_armed": bool(tsl_armed), "high_water_pnl": high_water_pnl}
+        finally:
+            c.close()
+
+    def update_stop_state(self, position_ts: str, tsl: float | None, tsl_armed: bool,
+                          high_water_pnl: float | None) -> None:
+        """Persist Module 6's ratchet state after a cycle that didn't trigger an exit —
+        so the NEXT cron invocation (a fresh process) reloads the tight stop rather than
+        recomputing from scratch, which could loosen it (6.3.3/6.7.1)."""
+        c = self._c()
+        try:
+            c.execute("UPDATE paper_trades SET tsl=?, tsl_armed=?, high_water_pnl=? "
+                     "WHERE ts=?", (tsl, int(tsl_armed), high_water_pnl, position_ts))
+            c.commit()
+        finally:
+            c.close()
+
+    def derive_account(self, capital: float, today: str) -> dict:
+        """Module 5's account facts, derived from real paper_trades — not tracked as a
+        separate running balance (ATOM has no margin/deployment simulation, so
+        `deployed` is honestly 0; DD floor uses today's capital as `peak_equity` since
+        no multi-day equity-curve history is persisted — a known limitation, see
+        PHASE-3-TECHNICAL.md)."""
+        c = self._c()
+        try:
+            realized_today = c.execute(
+                "select coalesce(sum(realized_pnl),0) from paper_trades "
+                "where exit_ts is not null and substr(exit_ts,1,10)=?", (today,)).fetchone()[0]
+            trades_today = c.execute(
+                "select count(*) from paper_trades where substr(ts,1,10)=?", (today,)).fetchone()[0]
+            open_row = c.execute(
+                "select structure, max_loss from paper_trades where exit_ts is null "
+                "order by ts desc limit 1").fetchone()
+            open_count = 1 if open_row else 0
+            reserved_risk_open = open_row[1] if open_row else 0.0
+            # today's entry count per family SO FAR (before any new candidate) — the
+            # lookup risk.evaluate() needs keyed by whatever family_id the new plan uses
+            reentries = dict(c.execute(
+                "select structure, count(*) from paper_trades where substr(ts,1,10)=? "
+                "group by structure", (today,)).fetchall())
+            equity = capital + realized_today
+            return {"capital": capital, "deployed": 0.0, "realized_pnl_today": realized_today,
+                    "reserved_risk_open": reserved_risk_open, "open_count": open_count,
+                    "trades_today": trades_today, "peak_equity": capital,
+                    "current_equity": equity, "reentries_today_by_family": reentries,
+                    "duplicate_suspected": False}
         finally:
             c.close()
