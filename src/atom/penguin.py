@@ -128,6 +128,71 @@ class PenguinReader:
                 out[(s, otype)] = {"ltp": _f(ltp), "oi": _f(oi)}
         return out
 
+    def historical_snapshots(self, start_ts: str, end_ts: str,
+                              strike_window: int = 6) -> list["Snapshot"]:
+        """Oldest-first snapshots for REPLAY — unlike recent_snapshots()/latest_snapshot(),
+        every price lookup is bounded to <= that row's own timestamp. Reusing
+        _option_chain() here would leak today's prices into a historical bar (it always
+        grabs the global max timestamp) — that's a real look-ahead bug for backtesting,
+        not just a style choice."""
+        c = self._connect()
+        try:
+            rows = c.execute(
+                f"select {','.join(ENRICHED_COLS)} from market_data_enriched "
+                f"where timestamp >= ? and timestamp <= ? order by timestamp asc",
+                (start_ts, end_ts)).fetchall()
+            out = []
+            for r in rows:
+                ind = dict(zip(ENRICHED_COLS, r))
+                atm = int(_f(ind["atm_strike"]) or 0)
+                expiry = ind["expiry_weekly"] or ""
+                step = 50
+                strikes = [atm + step * k for k in range(-strike_window, strike_window + 1)]
+                chain = self._option_chain_asof(c, expiry, strikes, ind["timestamp"])
+                ind_full = dict(ind)
+                ind_full.update(self._structure_bars(c, ind["instrument"], ind["timestamp"]))
+                out.append(Snapshot(
+                    ts=ind["timestamp"], spot=_f(ind["spot"]) or 0.0, atm_strike=atm,
+                    expiry=expiry, days_to_expiry=int(_f(ind["days_to_weekly"]) or 0),
+                    ind=ind_full, chain=chain))
+            return out
+        finally:
+            c.close()
+
+    def _option_chain_asof(self, c, expiry: str, strikes: list[int], as_of_ts: str) -> dict:
+        """Per-strike latest price <= as_of_ts — the asof-safe counterpart to
+        _option_chain(), which always uses today's global max timestamp."""
+        tok = _expiry_to_tsym(expiry)
+        if not tok:
+            return {}
+        out = {}
+        for s in strikes:
+            for right in ("CE", "PE"):
+                row = c.execute(
+                    "select ltp, oi from option_prices where strike=? and option_type=? "
+                    "and tsym like ? and timestamp <= ? order by timestamp desc limit 1",
+                    (s, right, f"NIFTY{tok}%", as_of_ts)).fetchone()
+                if row and row[0] is not None:
+                    out[(s, right)] = {"ltp": _f(row[0]), "oi": _f(row[1])}
+        return out
+
+    def latest_price_for_asof(self, expiry: str, strike: int, option_type: str,
+                               as_of_ts: str) -> tuple | None:
+        """asof-safe counterpart to latest_price_for() — for replaying check_exit()
+        against a simulated historical clock instead of the real live moment."""
+        tok = _expiry_to_tsym(expiry)
+        if not tok:
+            return None
+        c = self._connect()
+        try:
+            row = c.execute(
+                "select ltp, timestamp from option_prices where strike=? and option_type=? "
+                "and tsym like ? and timestamp <= ? order by timestamp desc limit 1",
+                (strike, option_type, f"NIFTY{tok}%", as_of_ts)).fetchone()
+            return (_f(row[0]), row[1]) if row and row[0] is not None else None
+        finally:
+            c.close()
+
     def latest_price_for(self, expiry: str, strike: int, option_type: str) -> tuple | None:
         """Independent per-leg latest price — for exit-checking an EXISTING position,
         not for a fresh chain snapshot. _option_chain() filters to one shared max
