@@ -88,3 +88,28 @@ MODULE 6 — STOP MANAGEMENT
   EXPECT TIME (unconditional)
   ACTUAL TIME   [OK]
 
+
+==============================================================================
+MODULE 13 — ORDER/EXECUTION (paper fills)
+==============================================================================
+
+  GIVEN  short (naked) + hedge (protective), unordered
+  WHEN   sequence_legs()
+  EXPECT hedge first, short second
+  ACTUAL hedge first, short second   [OK]
+
+  GIVEN  real chain ltp=120.35 for the short leg
+  WHEN   submit_paper()
+  EXPECT FILLED @ 120.3
+  ACTUAL FILLED @ 120.3   [OK]
+
+  GIVEN  empty chain (no quote available)
+  WHEN   submit_paper()
+  EXPECT REJECTED NO_LIQUIDITY (never fabricated)
+  ACTUAL REJECTED NO_LIQUIDITY   [OK]
+
+  GIVEN  short filled, protective hedge rejected (naked)
+  WHEN   detect_leg_in()
+  EXPECT COMPLETE (buy the wing, cap risk)
+  ACTUAL COMPLETE   [OK]
+

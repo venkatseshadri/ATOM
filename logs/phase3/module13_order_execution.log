@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.12.3', 'Platform': 'Linux-6.8.0-117-generic-x86_64-with-glibc2.39', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'cov': '7.0.0', 'metadata': '3.1.1', 'anyio': '4.13.0', 'json-report': '1.5.0', 'mock': '3.15.1'}}
+rootdir: /home/trading_ceo/atom
+configfile: pyproject.toml
+plugins: cov-7.0.0, metadata-3.1.1, anyio-4.13.0, json-report-1.5.0, mock-3.15.1
+collecting ... collected 22 items
+
+tests/test_order_execution.py::test_round_to_tick_sell_rounds_down PASSED [  4%]
+tests/test_order_execution.py::test_round_to_tick_buy_rounds_up PASSED   [  9%]
+tests/test_order_execution.py::test_validate_rejects_off_lot_qty PASSED  [ 13%]
+tests/test_order_execution.py::test_validate_rejects_limit_without_price PASSED [ 18%]
+tests/test_order_execution.py::test_validate_clean_order_passes PASSED   [ 22%]
+tests/test_order_execution.py::test_client_order_id_deterministic PASSED [ 27%]
+tests/test_order_execution.py::test_client_order_id_differs_per_leg PASSED [ 31%]
+tests/test_order_execution.py::test_duplicate_submit_detected PASSED     [ 36%]
+tests/test_order_execution.py::test_sequence_puts_protective_legs_first PASSED [ 40%]
+tests/test_order_execution.py::test_leg_in_naked_short_triggers_complete PASSED [ 45%]
+tests/test_order_execution.py::test_leg_in_missing_short_triggers_unwind PASSED [ 50%]
+tests/test_order_execution.py::test_no_leg_in_when_fully_filled PASSED   [ 54%]
+tests/test_order_execution.py::test_no_leg_in_when_fully_unfilled PASSED [ 59%]
+tests/test_order_execution.py::test_submit_paper_fills_from_real_chain PASSED [ 63%]
+tests/test_order_execution.py::test_submit_paper_rejects_missing_quote_never_fabricates PASSED [ 68%]
+tests/test_order_execution.py::test_submit_paper_rejects_invalid_order_before_lookup PASSED [ 72%]
+tests/test_order_execution.py::test_submit_paper_computes_slippage_vs_limit PASSED [ 77%]
+tests/test_order_execution.py::test_remaining_qty_tracks_partial_fill PASSED [ 81%]
+tests/test_order_execution.py::test_remaining_qty_zero_when_fully_filled PASSED [ 86%]
+tests/test_order_execution.py::test_transient_reject_classified PASSED   [ 90%]
+tests/test_order_execution.py::test_terminal_reject_classified PASSED    [ 95%]
+tests/test_order_execution.py::test_exit_orders_reverse_each_leg PASSED  [100%]
+
+============================== 22 passed in 0.02s ==============================

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 3 — narrated expected-vs-actual demo, per module (modules 7/5/6 so far).
+"""Phase 3 — narrated expected-vs-actual demo, per module (7/5/6/13 so far).
 
 Prints GIVEN/WHEN/EXPECT/ACTUAL for the key scenarios in each module's testcases.md —
 a human-readable companion to the raw pytest logs in logs/phase3/*.log.
@@ -9,7 +9,7 @@ from datetime import date, datetime
 
 sys.path.insert(0, "src")
 
-from atom import config, risk, session_lifecycle as sl, stop_management as sm
+from atom import config, order_execution as oe, risk, session_lifecycle as sl, stop_management as sm
 
 RULE = "=" * 78
 
@@ -120,7 +120,38 @@ def module6():
         "TIME (unconditional)", t.reason, match=(t.reason == "TIME"))
 
 
+def module13():
+    print(f"\n{RULE}\nMODULE 13 — ORDER/EXECUTION (paper fills)\n{RULE}\n")
+
+    short = oe.OrderRequest("short", "NIFTY07JUL26P24200", "SELL", 65, "MARKET", None,
+                            0.05, 65, "c1", protective=False)
+    hedge = oe.OrderRequest("hedge", "NIFTY07JUL26P24000", "BUY", 65, "MARKET", None,
+                            0.05, 65, "c2", protective=True)
+    ordered = oe.sequence_legs([short, hedge])
+    line("short (naked) + hedge (protective), unordered", "sequence_legs()",
+        "hedge first, short second", f"{ordered[0].leg_id} first, {ordered[1].leg_id} second",
+        match=(ordered[0].leg_id == "hedge"))
+
+    chain = {(24200, "PE"): {"ltp": 120.35, "oi": 100}}
+    f = oe.submit_paper(short, chain, 24200, "PE")
+    line("real chain ltp=120.35 for the short leg", "submit_paper()",
+        f"FILLED @ {oe.round_to_tick(120.35, 0.05, 'SELL')}",
+        f"{f.status} @ {f.avg_fill_price}", match=(f.status == "FILLED"))
+
+    f2 = oe.submit_paper(short, {}, 24200, "PE")
+    line("empty chain (no quote available)", "submit_paper()",
+        "REJECTED NO_LIQUIDITY (never fabricated)", f"{f2.status} {f2.reason}",
+        match=(f2.status == "REJECTED" and f2.reason == "NO_LIQUIDITY"))
+
+    pairs = [(short, oe.Fill("short", "c1", oe.FILLED, 65, 120.0, 120.0, 0.0)),
+            (hedge, oe.Fill("hedge", "c2", oe.REJECTED, 0, None, None, None, "NO_LIQUIDITY"))]
+    leg_in = oe.detect_leg_in(pairs, planned_leg_count=2)
+    line("short filled, protective hedge rejected (naked)", "detect_leg_in()",
+        "COMPLETE (buy the wing, cap risk)", leg_in, match=(leg_in == oe.COMPLETE))
+
+
 if __name__ == "__main__":
     module7()
     module5()
     module6()
+    module13()
