@@ -62,6 +62,11 @@ def day_vwap_series(instrument: str, date: str, spot_db: str) -> dict[str, float
             "select timestamp, volume from market_data where instrument = ? "
             "and timestamp like ? order by timestamp asc",
             (f"{instrument}-FUT", f"{date}%")).fetchall())
+    except sqlite3.OperationalError:
+        # spot_db missing market_data (e.g. test fixtures only carry
+        # market_data_enriched) or the futures db is unreachable — degrade to "no
+        # VWAP available" rather than crash the whole replay.
+        return {}
     finally:
         spot_conn.close()
         fut_conn.close()

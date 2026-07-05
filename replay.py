@@ -28,8 +28,8 @@ class _AsofReader:
         return self._inner.latest_price_for_asof(expiry, strike, option_type, self.as_of_ts)
 
 
-def replay(start: str, end: str) -> list[dict]:
-    reader = PenguinReader(LIVE)
+def replay(start: str, end: str, db_path: str = LIVE) -> list[dict]:
+    reader = PenguinReader(db_path)
     snaps = reader.historical_snapshots(start, end)
     asof_reader = _AsofReader(reader)
 
@@ -47,7 +47,7 @@ def replay(start: str, end: str) -> list[dict]:
         # the 2026-07-02 fixes).
         day = snap.ts[:10]
         if day not in vwap_cache:
-            vwap_cache[day] = recompute.day_vwap_series(snap.ind["instrument"], day, LIVE)
+            vwap_cache[day] = recompute.day_vwap_series(snap.ind["instrument"], day, db_path)
         snap.ind.update(recompute.corrected_indicators(snap.ind, vwap_cache[day]))
 
         if fsm_state == "SINGLE_SPREAD" and open_position is not None:
