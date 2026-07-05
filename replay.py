@@ -52,11 +52,16 @@ def replay(start: str, end: str) -> list[dict]:
         new_state, decision, order = phase1.cycle(fsm_state, snap)
         fsm_state = new_state
         if order is not None:
+            ik = ("ema20_slope", "rsi", "adx", "st_consensus", "structure_type",
+                  "pcr_total", "sentiment", "vwap", "spot")
             open_position = {
                 "ts": snap.ts, "structure": order.structure, "net_credit": order.net_credit,
                 "max_loss": order.max_loss, "lot": order.lot, "legs": order.legs,
                 "expiry": order.expiry, "exit_ts": None, "exit_reason": None,
                 "realized_pnl": None,
+                "entry_regime": decision["regime"], "entry_confidence": decision["confidence"],
+                "entry_votes": decision["votes"],
+                "entry_indicators": {k: snap.ind.get(k) for k in ik},
             }
 
     return trades
@@ -75,6 +80,13 @@ def main() -> None:
     for t in trades:
         legs_str = "; ".join(f"{a} {k}{r} @₹{p}" for a, k, r, p in t["legs"])
         print(f"{t['ts']}  {t['structure']}")
+        ind = t["entry_indicators"]
+        print(f"  entry indicators: EMA20-slope={ind['ema20_slope']}  RSI={ind['rsi']}  "
+              f"ADX={ind['adx']}  SuperTrend={ind['st_consensus']}  "
+              f"Structure={ind['structure_type']}  PCR={ind['pcr_total']}  "
+              f"sentiment={ind['sentiment']}  VWAP={ind['vwap']}  spot={ind['spot']}")
+        print(f"  entry votes: {t['entry_votes']}")
+        print(f"  entry regime={t['entry_regime']}  confidence={t['entry_confidence']}")
         print(f"  legs: {legs_str}")
         print(f"  net credit ₹{t['net_credit']:,.0f}  max loss ₹{t['max_loss']:,.0f}")
         pnl = t["realized_pnl"]
