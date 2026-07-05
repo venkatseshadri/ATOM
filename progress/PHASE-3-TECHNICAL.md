@@ -68,6 +68,24 @@ built and tested standalone but not yet the thing deciding whether `decide()` ma
 Module 11's session-health check is also not consulted in the live cycle yet (it's a
 secondary signal per its own design — bar-freshness already gates on stale data).
 
+## Real broker margin (2026-07-05, same session — user asked whether login captures margin)
+Module 11 gained `read_broker_margin()`: reads antariksh's `data/broker_limits.json`
+(refreshed weekdays 08:30 by a live broker-API call in `margin_calculator.py` — a REAL
+account snapshot: `total_margin_available`, `used_margin`, `free_margin`,
+`margin_multiplier`), fail-safe on missing/malformed/future-dated/stale (>4 days,
+covers a Fri-08:30-to-Mon-15:30 gap) data. `AtomState.derive_account()` folds this in as
+`broker_margin_available`/`broker_free_margin`/`broker_margin_reason`. `risk.py` adds an
+opt-in gate: a **confirmed** low reading (`broker_free_margin` < `risk.broker_margin_floor_inr`,
+default ₹50k) hard-blocks (`BROKER_MARGIN_LOW`); an **unknown** reading (stale/missing) is
+informational only (`BROKER_MARGIN_UNKNOWN:<reason>`), never a hard block — the existing
+capital/deployment/margin gates are the real safety net, this is an independent sanity
+check on the REAL shared account (covers every system on the box, not just ATOM), not a
+substitute for ATOM's own strategy-scoped budget. Same no-new-login stance as the session
+heartbeat check — read-only, no broker call from ATOM itself.
+
+12 new tests (`test_connectivity.py` +8, `test_risk.py` +4, `test_atom_state_phase3.py`
++1). Live-verified against the real file: ₹579,918.15 free margin read and passed cleanly.
+
 ## Known gaps (honest, not fixed here)
 - **Greek-based SL (6.1.3) and greek-driven strike selection remain N/A** — same root
   cause as Phase 2: Penguin has no per-strike delta/IV, only ltp/oi/volume.

@@ -21,12 +21,17 @@ session itself alive" check for cases where the feed process is up but somehow n
 producing fresh bars (or vice versa)."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 HEARTBEAT_DIR = Path("/home/trading_ceo/antariksh/data/live")
 DEFAULT_STALE_AFTER_SEC = 90
+BROKER_LIMITS_FILE = Path("/home/trading_ceo/antariksh/data/broker_limits.json")
+# refreshed weekdays 08:30 — a Friday fetch read as late as Monday 15:30 is 3.29 days
+# later; 4 gives headroom without masking a genuinely stuck refresh cron.
+DEFAULT_MARGIN_MAX_AGE_DAYS = 4
 
 
 @dataclass(frozen=True)
@@ -67,3 +72,43 @@ def check_session_health(index: str, now: datetime | None = None,
         return SessionHealth(index, False, raw, age, "HEARTBEAT_IN_FUTURE")
     alive = age <= stale_after_sec
     return SessionHealth(index, alive, raw, age, None if alive else "HEARTBEAT_STALE")
+
+
+@dataclass(frozen=True)
+class BrokerMargin:
+    """Real broker margin/capital, read-only — antariksh's `margin_calculator.py` cron
+    (weekdays 08:30, before open) fetches this from the live broker API and writes
+    `data/broker_limits.json`. ATOM never fetches it itself (same no-new-login stance as
+    the session health check above)."""
+    available: bool
+    total_margin_available: float | None
+    used_margin: float | None
+    free_margin: float | None
+    margin_multiplier: float | None
+    as_of: str | None
+    age_days: float | None
+    reason: str | None   # None if available; else NO_FILE | MALFORMED | STALE | FUTURE_TIMESTAMP
+
+
+def read_broker_margin(path: Path | str = BROKER_LIMITS_FILE, now: datetime | None = None,
+                       max_age_days: float = DEFAULT_MARGIN_MAX_AGE_DAYS) -> BrokerMargin:
+    """Fail-safe: any read/parse/staleness failure resolves to available=False — a
+    caller must never treat a missing/stale file as '0 used, all clear'."""
+    now = now or datetime.now()
+    try:
+        raw = json.loads(Path(path).read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return BrokerMargin(False, None, None, None, None, None, None, "NO_FILE")
+    try:
+        ts = datetime.fromisoformat(raw["timestamp"])
+    except (KeyError, TypeError, ValueError):
+        return BrokerMargin(False, None, None, None, None, raw.get("timestamp"), None, "MALFORMED")
+    age_days = (now - ts).total_seconds() / 86400
+    if age_days < 0:
+        return BrokerMargin(False, None, None, None, None, raw["timestamp"], age_days,
+                            "FUTURE_TIMESTAMP")
+    if age_days > max_age_days:
+        return BrokerMargin(False, None, None, None, None, raw["timestamp"], age_days, "STALE")
+    return BrokerMargin(True, raw.get("total_margin_available"), raw.get("used_margin"),
+                        raw.get("free_margin"), raw.get("margin_multiplier"),
+                        raw["timestamp"], age_days, None)

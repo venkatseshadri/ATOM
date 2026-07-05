@@ -81,3 +81,14 @@ def test_derive_account_reflects_realized_loss_today(tmp_path):
     assert acct["realized_pnl_today"] == -3370.5
     assert acct["current_equity"] == 200000 - 3370.5
     assert acct["open_count"] == 0   # position closed
+
+
+def test_derive_account_includes_real_broker_margin_fields(tmp_path):
+    """derive_account() folds in antariksh's real broker_limits.json (or a
+    fail-safe 'unavailable' reading if the box has none) — either way, the keys
+    risk.py's gate checks for must always be present."""
+    state = AtomState(str(tmp_path / "s.sqlite"))
+    acct = state.derive_account(capital=200000, today="2026-07-06")
+    assert "broker_margin_available" in acct
+    assert "broker_free_margin" in acct
+    assert "broker_margin_reason" in acct

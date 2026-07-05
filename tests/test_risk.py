@@ -235,3 +235,36 @@ def test_property_no_approved_path_breaches_any_hard_limit():
             assert open_count < concurrent_max
         else:
             assert v.permitted_qty == 0
+
+
+# ---- Real broker margin sanity gate (optional, only when supplied) ------------
+
+def test_broker_margin_absent_key_unaffected():
+    """Existing accounts (no broker_margin_available key at all) are completely
+    unaffected — the gate is opt-in per-account, not a global default."""
+    v = evaluate(_plan(), _account(), CFG)
+    assert v.verdict == APPROVED
+
+
+def test_broker_margin_low_hard_blocks():
+    account = {**_account(), "broker_margin_available": True, "broker_free_margin": 1000.0,
+              "broker_margin_reason": None}
+    v = evaluate(_plan(), account, CFG)
+    assert v.verdict == REJECTED and "BROKER_MARGIN_LOW" in v.reasons
+
+
+def test_broker_margin_sufficient_passes():
+    account = {**_account(), "broker_margin_available": True, "broker_free_margin": 579918.15,
+              "broker_margin_reason": None}
+    v = evaluate(_plan(), account, CFG)
+    assert v.verdict == APPROVED
+
+
+def test_broker_margin_unknown_is_informational_not_a_hard_block():
+    """Stale/missing broker data must NOT block trading — it's a secondary signal;
+    the existing gates (capital/deployment/margin) are the real safety net."""
+    account = {**_account(), "broker_margin_available": False, "broker_free_margin": None,
+              "broker_margin_reason": "STALE"}
+    v = evaluate(_plan(), account, CFG)
+    assert v.verdict == APPROVED
+    assert any("BROKER_MARGIN_UNKNOWN" in r for r in v.reasons)

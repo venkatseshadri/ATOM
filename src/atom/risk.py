@@ -172,6 +172,21 @@ def evaluate(plan: dict, account: dict, cfg: dict | None = None) -> RiskVerdict:
     if account.get("duplicate_suspected"):
         reasons.append("DUPLICATE_SUSPECTED")
 
+    # ---- Real broker margin sanity check (optional — only when the caller supplies
+    # it, e.g. AtomState.derive_account()'s antariksh broker_limits.json read). This is
+    # the REAL shared account's headroom (covers every system on the box), an
+    # independent sanity check — not a substitute for the capital/deployment gates
+    # above, which are ATOM's own strategy-scoped budget. Absence/staleness is
+    # informational only (fail-open on unknown, per Module 11's secondary-signal
+    # stance) — only a CONFIRMED low reading hard-blocks.
+    if "broker_margin_available" in account:
+        if account["broker_margin_available"]:
+            floor = cfg.get("risk.broker_margin_floor_inr", 50000)
+            if account.get("broker_free_margin", 0) < floor:
+                reasons.append("BROKER_MARGIN_LOW")
+        else:
+            info_reasons.append(f"BROKER_MARGIN_UNKNOWN:{account.get('broker_margin_reason')}")
+
     hard_gates_tripped = bool(reasons)   # every reason appended so far is a hard gate
 
     # ---- 5.2.3 Portfolio risk-after overlay (additive, no netting) ----------------

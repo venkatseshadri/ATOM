@@ -23,6 +23,7 @@ DEFAULTS = {
     "risk.margin.pct_of_maxloss": 100,   # ‹TBD› margin ≈ max loss for defined-risk spreads
     "risk.margin.buffer.pct": 10,
     "risk.duplicate_window.sec": 5,
+    "risk.broker_margin_floor_inr": 50000,  # ‹TBD› real shared-account sanity floor
     "tsl.activation.pct": 30,             # ‹TBD› arm TSL once this % of credit captured
     "tsl.trail_gap.pct": 50,               # ‹TBD› trailed floor sits this % of credit behind high-water
     "stop.expiry_tighten.factor": 0.7,     # ‹TBD› sl.pct multiplier on expiry day

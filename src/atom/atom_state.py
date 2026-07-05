@@ -159,10 +159,18 @@ class AtomState:
 
     def derive_account(self, capital: float, today: str) -> dict:
         """Module 5's account facts, derived from real paper_trades — not tracked as a
-        separate running balance (ATOM has no margin/deployment simulation, so
-        `deployed` is honestly 0; DD floor uses today's capital as `peak_equity` since
-        no multi-day equity-curve history is persisted — a known limitation, see
-        PHASE-3-TECHNICAL.md)."""
+        separate running balance (ATOM has no margin/deployment simulation of its OWN
+        positions, so `deployed` is honestly 0; DD floor uses today's capital as
+        `peak_equity` since no multi-day equity-curve history is persisted — a known
+        limitation, see PHASE-3-TECHNICAL.md).
+
+        Also folds in the REAL broker account margin (antariksh's `broker_limits.json`,
+        refreshed daily 08:30 by a live broker-API call) as `broker_margin_available` /
+        `broker_free_margin` — this is the actual shared account's headroom (covers
+        every system on the box, not just ATOM), used as an independent sanity gate in
+        risk.py, not as a substitute for ATOM's own strategy-scoped `deployed`/`capital`."""
+        from . import connectivity
+        bm = connectivity.read_broker_margin()
         c = self._c()
         try:
             realized_today = c.execute(
@@ -185,6 +193,10 @@ class AtomState:
                     "reserved_risk_open": reserved_risk_open, "open_count": open_count,
                     "trades_today": trades_today, "peak_equity": capital,
                     "current_equity": equity, "reentries_today_by_family": reentries,
-                    "duplicate_suspected": False}
+                    "duplicate_suspected": False,
+                    "broker_margin_available": bm.available,
+                    "broker_free_margin": bm.free_margin,
+                    "broker_margin_age_days": bm.age_days,
+                    "broker_margin_reason": bm.reason}
         finally:
             c.close()
