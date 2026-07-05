@@ -57,7 +57,7 @@ Check every box, then the Board signs the gate. Unchecked = phase not done.
 - [ ] Stub test suite green in CI.
 - **Gate 0 (Board):** approve frozen contracts + skeleton. → unlocks Phase 1.
 
-### Phase 1 — Regime + Signal  ☐ GATE 1
+### Phase 1 — Regime + Signal  ✅ GATE 1
 - [ ] Module 1 supplies a real/replayed `MarketSnapshot` (spot, chain, IV/greeks, multi-TF OHLC).
 - [ ] Module 2 produces a regime label + confidence from the **7 indicator families** (line items 2.x pass).
 - [ ] Module 3 FSM emits open/morph/hold/exit decisions; all transition test cases pass.
@@ -66,9 +66,10 @@ Check every box, then the Board signs the gate. Unchecked = phase not done.
 - **Gate 1 (Board):** review regime calls + decisions on replay. → unlocks Phase 2.
 
 ### Phase 2 — Strike + Structure  ☐ GATE 2
-- [ ] Module 12 resolves weekly expiry, strike ladder, lot/tick, correct per-index tradingsymbol.
-- [ ] Module 4 turns a decision into concrete legs (strike/wing/qty/price), greek-driven, paper only.
-- [ ] Construction + instrument line-item tests pass (incl. NIFTY vs SENSEX symbol formats).
+- [x] Module 12 resolves weekly expiry, strike ladder, lot/tick, correct per-index tradingsymbol.
+- [x] Module 4 turns a decision into concrete legs (strike/wing/qty/price), distance-method
+      (greek-driven N/A — no per-strike greeks in Penguin data; see PHASE-2-TECHNICAL.md), paper only.
+- [x] Construction + instrument line-item tests pass (incl. NIFTY vs SENSEX symbol formats) — 12/12, `tests/test_phase2.py`.
 - **Gate 2 (Board):** review generated structures for sanity. → unlocks Phase 3.
 
 ### Phase 3 — Risk + Execution  ☐ GATE 3
@@ -121,3 +122,9 @@ G1–G4 there still need a Board ruling before their REAL phase (G1→P3, G2→P
 already standardized on `ParameterSet`).
 
 **Next:** Board signs GATE 0 (review contracts + skeleton) → Phase 1 begins.
+
+---
+
+**Update 2026-07-05:** GATE 0 and GATE 1 signed (see GATES.md). Phase 2 built — see
+[PHASE-2-TECHNICAL.md](progress/PHASE-2-TECHNICAL.md). **Next:** Board reviews Phase 2 →
+signs GATE 2 → Phase 3 (Risk + Execution) begins.

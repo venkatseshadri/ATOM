@@ -9,6 +9,7 @@ lifecycle decision. Thresholds here are the Phase-1 DEFAULTS (‹TBD›, researc
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from . import config
 from .penguin import Snapshot, _f
@@ -17,6 +18,15 @@ STEP = 50
 
 # active config (dotted keys) — overridable via configure(); defaults from config.py
 CFG = dict(config.DEFAULTS)
+
+
+def index_for_weekday(now: datetime | None = None) -> str:
+    """0-1 DTE index selection (Board rule, 2026-07-05): NIFTY's weekly expires
+    Tuesday, so Fri/Mon/Tue are its 0-1 DTE days; SENSEX's weekly expires Thursday,
+    so Wed/Thu are its 0-1 DTE days. Weekend inputs (market closed, cron doesn't
+    fire) fall back to NIFTY harmlessly."""
+    now = now or datetime.now()
+    return "SENSEX" if now.weekday() in (2, 3) else "NIFTY"
 
 
 def configure(cfg: dict) -> None:
@@ -347,18 +357,41 @@ class PaperOrder:
     lot: int
     expiry: str        # persisted so exit-checking re-queries the SAME contract later,
                        # regardless of whether "current week" has since rolled forward
+    tsyms: tuple = ()  # Phase 2: real per-leg tradingsymbols, same order as legs.
+                       # Empty by default (legacy/no-InstrumentMaster callers unaffected).
+    index: str = "NIFTY"  # which underlying these legs are on — needed so exit-checking
+                          # queries the right index's option chain (SENSEX != NIFTY grammar)
 
 
-def build_order(structure: str, snap: Snapshot) -> PaperOrder | None:
+def build_order(structure: str, snap: Snapshot, im=None) -> PaperOrder | None:
+    """`im`: optional real Module 12 (InstrumentMaster, see instrument.py). Omitted =
+    legacy Phase-1 behaviour (NIFTY-only STEP/lot constant, no symbols) — every existing
+    caller keeps working unchanged. Passed = Phase-2 real path: per-index step/lot from
+    the broker master, real round-trip-verified tradingsymbol per leg, works for SENSEX
+    too (STEP=50 was NIFTY-only and would have silently mis-sized SENSEX wings)."""
     atm = snap.atm_strike
-    lot = CFG.get("strategy.lot.size", 75)
-    wing = CFG.get("strategy.wing.strikes", 4) * STEP
+    index = snap.ind.get("instrument", "NIFTY")
+    tsyms = ()
+    if im is not None:
+        inst = im.resolve(index, snap.spot)
+        lot = inst.lot_size
+        step = im.step_for(index, inst.expiry)
+    else:
+        lot = CFG.get("strategy.lot.size", 65)
+        step = STEP
+    wing = CFG.get("strategy.wing.strikes", 4) * step
     if structure == "bull_put_spread":
         short_k, hedge_k, right = atm, atm - wing, "PE"
     elif structure == "bear_call_spread":
         short_k, hedge_k, right = atm, atm + wing, "CE"
     else:
         return None
+    if im is not None:
+        hedge_inst = im.lookup(index, inst.expiry, hedge_k, right)
+        short_inst = im.lookup(index, inst.expiry, short_k, right)
+        if hedge_inst is None or short_inst is None:
+            return None                                # SYMBOL_UNRESOLVED — refuse, don't guess
+        tsyms = (hedge_inst.tradingsymbol, short_inst.tradingsymbol)
     sp = snap.chain.get((short_k, right))
     hp = snap.chain.get((hedge_k, right))
     if not sp or not hp or sp["ltp"] is None or hp["ltp"] is None:
@@ -369,7 +402,12 @@ def build_order(structure: str, snap: Snapshot) -> PaperOrder | None:
     max_loss = round((wing - credit_per) * lot, 2)
     # hedge leg placed FIRST (leg-in safety), then the short
     legs = (("BUY", hedge_k, right, hedge_ltp), ("SELL", short_k, right, short_ltp))
-    return PaperOrder(structure, legs, net_credit, max_loss, lot, snap.expiry)
+    # real path: the legs were resolved against inst.expiry (Module 12's real answer),
+    # which can differ from Penguin's own snap.expiry (e.g. stale/unrolled) — the stored
+    # expiry MUST match the legs' actual contract, or exit-time price requery targets the
+    # wrong tsym token entirely.
+    order_expiry = inst.expiry if im is not None else snap.expiry
+    return PaperOrder(structure, legs, net_credit, max_loss, lot, order_expiry, tsyms, index)
 
 
 # ---- exit check: SL / TP / EOD only (minimal slice — no TSL, no morph) --------
@@ -402,13 +440,14 @@ def check_exit(position: dict, reader, bar_ts: str) -> ExitCheck:
     a full day+ without a fresh tick)."""
     (_, h_k, h_r, h_entry), (_, s_k, s_r, s_entry) = position["legs"]
     expiry = position["expiry"]
+    index = position.get("index", "NIFTY")
     max_loss, net_credit, lot = position["max_loss"], position["net_credit"], position["lot"]
     sl_threshold = -round(CFG.get("risk.sl.pct", 35) / 100.0 * max_loss, 2)
     tp_threshold = round(CFG.get("risk.tp.pct", 50) / 100.0 * net_credit, 2)
     is_eod = bar_ts[11:16] >= CFG.get("session.eod.cutoff", "15:20")
 
-    hedge = reader.latest_price_for(expiry, h_k, h_r)
-    short = reader.latest_price_for(expiry, s_k, s_r)
+    hedge = reader.latest_price_for(expiry, h_k, h_r, index)
+    short = reader.latest_price_for(expiry, s_k, s_r, index)
     hedge_ltp, hedge_ts = hedge if hedge else (None, None)
     short_ltp, short_ts = short if short else (None, None)
 
@@ -434,10 +473,10 @@ def check_exit(position: dict, reader, bar_ts: str) -> ExitCheck:
 
 # ---- the cycle (pure): state + snapshot -> new_state, decision, paper_order ---
 
-def cycle(fsm_state: str, snap: Snapshot) -> tuple[str, dict, PaperOrder | None]:
+def cycle(fsm_state: str, snap: Snapshot, im=None) -> tuple[str, dict, PaperOrder | None]:
     regime, conf, probs, votes = classify_regime(snap.ind)
     intent, structure = decide(fsm_state, regime, conf, snap.ts)
-    order = build_order(structure, snap) if intent == "OPEN" else None
+    order = build_order(structure, snap, im) if intent == "OPEN" else None
     new_state = "SINGLE_SPREAD" if order else fsm_state
     if intent == "OPEN" and order is None:
         intent, structure = "STAND_DOWN", "premiums_unavailable"
