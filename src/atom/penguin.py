@@ -161,17 +161,25 @@ class PenguinReader:
 
     def _option_chain_asof(self, c, expiry: str, strikes: list[int], as_of_ts: str) -> dict:
         """Per-strike latest price <= as_of_ts — the asof-safe counterpart to
-        _option_chain(), which always uses today's global max timestamp."""
+        _option_chain(), which always uses today's global max timestamp.
+
+        Bounded to the SAME calendar date as as_of_ts. Without this, an illiquid/
+        just-listed contract with zero same-day ticks silently falls back to whatever
+        it last traded at days earlier (confirmed: a real case reached back 3 calendar
+        days to a Friday-evening post-close tick and used it as a Monday entry price)
+        — exactly the fabrication build_order() already refuses to do live."""
         tok = _expiry_to_tsym(expiry)
         if not tok:
             return {}
+        date = as_of_ts[:10]
         out = {}
         for s in strikes:
             for right in ("CE", "PE"):
                 row = c.execute(
                     "select ltp, oi from option_prices where strike=? and option_type=? "
-                    "and tsym like ? and timestamp <= ? order by timestamp desc limit 1",
-                    (s, right, f"NIFTY{tok}%", as_of_ts)).fetchone()
+                    "and tsym like ? and timestamp <= ? and timestamp >= ? "
+                    "order by timestamp desc limit 1",
+                    (s, right, f"NIFTY{tok}%", as_of_ts, date)).fetchone()
                 if row and row[0] is not None:
                     out[(s, right)] = {"ltp": _f(row[0]), "oi": _f(row[1])}
         return out
