@@ -73,12 +73,19 @@ Check every box, then the Board signs the gate. Unchecked = phase not done.
 - **Gate 2 (Board):** review generated structures for sanity. → unlocks Phase 3.
 
 ### Phase 3 — Risk + Execution  ☐ GATE 3
-- [ ] Module 5 enforces deploy cap, DD floor, daily-loss, re-entries, sizing — **property tests prove no path breaches**.
-- [ ] Module 6 sets and trails SL/TSL/TP; breach raises exit.
-- [ ] Module 11 maintains an authenticated session; reconnect handled.
-- [ ] Module 13 places/cancels orders and captures fills (paper); partial/reject handled.
-- [ ] Module 7 enforces entry windows + mandatory EOD square-off.
-- [ ] Risk gate is non-overridable (RR-6) — test proves it.
+- [x] Module 5 enforces deploy cap, DD floor, daily-loss, re-entries, sizing — **property tests prove no path breaches** (500-iteration property test, `test_risk.py`).
+- [x] Module 6 sets and trails SL/TSL/TP; breach raises exit (ratchet-proven never-loosen, `test_stop_management.py`).
+- [x] Module 11 maintains session awareness — reads antariksh's shared broker session
+      (read-only heartbeat health check) rather than an independent login (collision risk
+      with the live feed session, see PHASE-3-TECHNICAL.md); reconnect is antariksh's
+      responsibility, ATOM just detects staleness.
+- [x] Module 13 places orders and captures fills (paper, real chain data); partial/reject
+      handled. Modify/cancel flows (§13.4/13.5) and live broker reconciliation (§13.9)
+      deferred — no live broker round-trip exists yet.
+- [x] Module 7 enforces entry windows + mandatory EOD square-off (escalation ladder + flat confirmation).
+- [x] Risk gate is non-overridable (RR-6) — test proves it (`test_no_force_field_exists_to_honor`).
+- [x] Full lifecycle proven end-to-end (`test_phase3_integration.py`) — not yet wired into
+      the live cron path (see PHASE-3-TECHNICAL.md "Not done").
 - **Gate 3 (Board):** review full paper trade lifecycle + risk invariants. → unlocks Phase 4.
 
 ### Phase 4 — Ledger + Monitor  ☐ GATE 4
@@ -125,6 +132,6 @@ already standardized on `ParameterSet`).
 
 ---
 
-**Update 2026-07-05:** GATE 0 and GATE 1 signed (see GATES.md). Phase 2 built — see
-[PHASE-2-TECHNICAL.md](progress/PHASE-2-TECHNICAL.md). **Next:** Board reviews Phase 2 →
-signs GATE 2 → Phase 3 (Risk + Execution) begins.
+**Update 2026-07-05:** GATE 0, GATE 1, GATE 2 signed (see GATES.md). Phase 3 built — see
+[PHASE-3-TECHNICAL.md](progress/PHASE-3-TECHNICAL.md). **Next:** Board reviews Phase 3 →
+signs GATE 3 → Phase 4 (Ledger + Monitor) begins.

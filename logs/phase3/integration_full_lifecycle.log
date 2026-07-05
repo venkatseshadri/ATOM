@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.12.3', 'Platform': 'Linux-6.8.0-117-generic-x86_64-with-glibc2.39', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'cov': '7.0.0', 'metadata': '3.1.1', 'anyio': '4.13.0', 'json-report': '1.5.0', 'mock': '3.15.1'}}
+rootdir: /home/trading_ceo/atom
+configfile: pyproject.toml
+plugins: cov-7.0.0, metadata-3.1.1, anyio-4.13.0, json-report-1.5.0, mock-3.15.1
+collecting ... collected 2 items
+
+tests/test_phase3_integration.py::test_full_lifecycle_open_gate_fill_stops_squareoff PASSED [ 50%]
+tests/test_phase3_integration.py::test_full_lifecycle_risk_gate_blocks_before_any_fill_attempted PASSED [100%]
+
+============================== 2 passed in 0.49s ===============================
