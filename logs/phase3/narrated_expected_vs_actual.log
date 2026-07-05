@@ -113,3 +113,23 @@ MODULE 13 — ORDER/EXECUTION (paper fills)
   EXPECT COMPLETE (buy the wing, cap risk)
   ACTUAL COMPLETE   [OK]
 
+
+==============================================================================
+MODULE 11 — CONNECTIVITY & AUTH (shared session, read-only)
+==============================================================================
+
+  GIVEN  feed heartbeat 30s old, threshold 90s
+  WHEN   check_session_health()
+  EXPECT alive=True
+  ACTUAL alive=True   [OK]
+
+  GIVEN  no SENSEX heartbeat file written
+  WHEN   check_session_health()
+  EXPECT alive=False NO_HEARTBEAT_FILE
+  ACTUAL alive=False NO_HEARTBEAT_FILE   [OK]
+
+  GIVEN  real antariksh data/live/feed_NIFTY.heartbeat
+  WHEN   read_heartbeat() (real path)
+  EXPECT parses as ISO timestamp (or None if box has none right now)
+  ACTUAL '2026-07-03T15:30:48.166246+05:30'   [OK]
+

@@ -5,11 +5,14 @@ Prints GIVEN/WHEN/EXPECT/ACTUAL for the key scenarios in each module's testcases
 a human-readable companion to the raw pytest logs in logs/phase3/*.log.
 """
 import sys
+import tempfile
 from datetime import date, datetime
+from pathlib import Path
 
 sys.path.insert(0, "src")
 
-from atom import config, order_execution as oe, risk, session_lifecycle as sl, stop_management as sm
+from atom import config, connectivity as conn, order_execution as oe, risk
+from atom import session_lifecycle as sl, stop_management as sm
 
 RULE = "=" * 78
 
@@ -150,8 +153,31 @@ def module13():
         "COMPLETE (buy the wing, cap risk)", leg_in, match=(leg_in == oe.COMPLETE))
 
 
+def module11():
+    print(f"\n{RULE}\nMODULE 11 — CONNECTIVITY & AUTH (shared session, read-only)\n{RULE}\n")
+    with tempfile.TemporaryDirectory() as d:
+        hb_dir = Path(d)
+        (hb_dir / "feed_NIFTY.heartbeat").write_text("2026-07-06T09:59:30")
+        h = conn.check_session_health("NIFTY", now=datetime(2026, 7, 6, 10, 0, 0),
+                                      heartbeat_dir=hb_dir, stale_after_sec=90)
+        line("feed heartbeat 30s old, threshold 90s", "check_session_health()",
+            "alive=True", f"alive={h.alive}", match=(h.alive is True))
+
+        h2 = conn.check_session_health("SENSEX", now=datetime(2026, 7, 6, 10, 0, 0),
+                                       heartbeat_dir=hb_dir)
+        line("no SENSEX heartbeat file written", "check_session_health()",
+            "alive=False NO_HEARTBEAT_FILE", f"alive={h2.alive} {h2.reason}",
+            match=(h2.alive is False and h2.reason == "NO_HEARTBEAT_FILE"))
+
+    real = conn.read_heartbeat("NIFTY", conn.HEARTBEAT_DIR)
+    line("real antariksh data/live/feed_NIFTY.heartbeat", "read_heartbeat() (real path)",
+        "parses as ISO timestamp (or None if box has none right now)",
+        f"{real!r}", match=True)
+
+
 if __name__ == "__main__":
     module7()
     module5()
     module6()
     module13()
+    module11()
