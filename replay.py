@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, "src")
 
-from atom import phase1               # noqa: E402
+from atom import phase1, recompute      # noqa: E402
 from atom.penguin import PenguinReader  # noqa: E402
 
 LIVE = "/home/trading_ceo/python-trader/varaha/data/capture_nifty.sqlite"
@@ -36,9 +36,19 @@ def replay(start: str, end: str) -> list[dict]:
     fsm_state = "FLAT"
     open_position = None
     trades = []
+    vwap_cache: dict[str, dict] = {}
 
     for snap in snaps:
         asof_reader.as_of_ts = snap.ts
+
+        # Use TODAY's fixed logic for st_consensus/structure_type/vwap instead of the
+        # stored columns, which reflect whatever logic was live when each row was
+        # written (see recompute.py docstring — most of the retained window predates
+        # the 2026-07-02 fixes).
+        day = snap.ts[:10]
+        if day not in vwap_cache:
+            vwap_cache[day] = recompute.day_vwap_series(snap.ind["instrument"], day, LIVE)
+        snap.ind.update(recompute.corrected_indicators(snap.ind, vwap_cache[day]))
 
         if fsm_state == "SINGLE_SPREAD" and open_position is not None:
             ec = phase1.check_exit(open_position, asof_reader, snap.ts)
