@@ -30,9 +30,73 @@ class AtomState:
                   "(bar_ts TEXT, lights TEXT, gap TEXT, permission TEXT, size TEXT, "
                   "trigger INTEGER, family_dir TEXT, family_conf REAL, "
                   "candidate_enter INTEGER, candidate_instrument TEXT, reason TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS applied_fills "
+                  "(fill_id TEXT PRIMARY KEY, leg_key TEXT, price REAL, qty INTEGER, "
+                  "applied_at TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS eod_finalizations "
+                  "(day TEXT PRIMARY KEY, daily_realized REAL, flat INTEGER, "
+                  "residual_legs TEXT, finalized_at TEXT)")
         c.execute("INSERT OR IGNORE INTO atom_state(id,fsm_state,last_bar_ts) "
                   "VALUES(1,'FLAT',NULL)")
         c.commit(); c.close()
+
+    # ---- Module 14: idempotent fill application (14.1.2) -----------------------
+
+    def is_fill_applied(self, fill_id: str) -> bool:
+        c = self._c()
+        try:
+            return c.execute("SELECT 1 FROM applied_fills WHERE fill_id=?",
+                            (fill_id,)).fetchone() is not None
+        finally:
+            c.close()
+
+    def record_fill_applied(self, fill_id: str, leg_key: str, price: float, qty: int,
+                            applied_at: str) -> bool:
+        """Returns True if newly recorded, False if this fill_id was already applied
+        (idempotent — a duplicate redelivery is a safe no-op, not an error)."""
+        c = self._c()
+        try:
+            try:
+                c.execute("INSERT INTO applied_fills VALUES (?,?,?,?,?)",
+                         (fill_id, leg_key, price, qty, applied_at))
+                c.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False   # fill_id already exists — duplicate suppressed
+        finally:
+            c.close()
+
+    # ---- Module 14: EOD finalization (14.9.2 — idempotent, immutable per day) --
+
+    def finalize_day(self, day: str, daily_realized: float, flat: bool,
+                     residual_legs: tuple, finalized_at: str) -> bool:
+        """Returns True if this day was newly finalized, False if already finalized
+        (idempotent — re-running EOD finalization for an already-closed day is a
+        safe no-op, never a silent rewrite of the frozen figure)."""
+        c = self._c()
+        try:
+            try:
+                c.execute("INSERT INTO eod_finalizations VALUES (?,?,?,?,?)",
+                         (day, daily_realized, int(flat), json.dumps(residual_legs), finalized_at))
+                c.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+        finally:
+            c.close()
+
+    def day_finalization(self, day: str) -> dict | None:
+        c = self._c()
+        try:
+            row = c.execute("SELECT daily_realized, flat, residual_legs, finalized_at "
+                           "FROM eod_finalizations WHERE day=?", (day,)).fetchone()
+        finally:
+            c.close()
+        if not row:
+            return None
+        daily_realized, flat, residual_legs, finalized_at = row
+        return {"daily_realized": daily_realized, "flat": bool(flat),
+                "residual_legs": tuple(json.loads(residual_legs)), "finalized_at": finalized_at}
 
     def _migrate_paper_trades(self, c) -> None:
         """Add exit-tracking + Phase 3 ratchet columns to an existing paper_trades table
