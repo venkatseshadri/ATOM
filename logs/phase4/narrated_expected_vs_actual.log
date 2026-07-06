@@ -1,0 +1,60 @@
+
+==============================================================================
+MODULE 16 — CONFIG & PARAMETERSET
+==============================================================================
+
+  GIVEN  clean config, first freeze of the day
+  WHEN   freeze_for_session()
+  EXPECT v1 frozen, sl.pct=35
+  ACTUAL v1:0f2df62a1fdb4e89, sl.pct=35   [OK]
+
+  GIVEN  mid-day edit to sl.pct=999 attempted
+  WHEN   freeze_for_session() (same day)
+  EXPECT SAME version, edit ignored, sl.pct still 35
+  ACTUAL v1:0f2df62a1fdb4e89, sl.pct=35   [OK]
+
+  GIVEN  out-of-bounds candidate (sl.pct=500, max 100)
+  WHEN   freeze_for_session()
+  EXPECT REJECTED, OUT_OF_BOUNDS
+  ACTUAL None ['OUT_OF_BOUNDS:risk.sl.pct=500 not in [1,100]']   [OK]
+
+
+==============================================================================
+MODULE 14 — LEDGER & PERSISTENCE
+==============================================================================
+
+  GIVEN  short 65 @ entry 11, mark decays to 9
+  WHEN   compute_pnl()
+  EXPECT unrealized = (11-9)*65 = 130.0
+  ACTUAL unrealized=130.0   [OK]
+
+  GIVEN  mark is missing/stale
+  WHEN   compute_pnl()
+  EXPECT unrealized=None, confidence=LOW_CONFIDENCE (never a fake zero)
+  ACTUAL unrealized=None, confidence=LOW_CONFIDENCE   [OK]
+
+  GIVEN  ledger short 65, broker reports short 130
+  WHEN   reconcile()
+  EXPECT MISSED_FILL, ledger untouched
+  ACTUAL MISSED_FILL, ledger still -65   [OK]
+
+  GIVEN  one leg still open at EOD
+  WHEN   finalize_eod()
+  EXPECT flat=False, alarm=NOT_FLAT_AT_EOD
+  ACTUAL flat=False, alarm=NOT_FLAT_AT_EOD   [OK]
+
+
+==============================================================================
+MODULE 15 — TELEMETRY & AUDIT
+==============================================================================
+
+  GIVEN  3 events logged for trade T1
+  WHEN   reconstruct_trade()
+  EXPECT decision.open, risk.approved, position.tsl_trigger (in order)
+  ACTUAL ['decision.open', 'risk.approved', 'position.tsl_trigger']   [OK]
+
+  GIVEN  decision.open payload tampered after the fact
+  WHEN   verify_integrity()
+  EXPECT TAMPERED event detected
+  ACTUAL ['TAMPERED event 8239ee4e-7741-48dd-9576-2a1565d4a9b7: hash mismatch']   [OK]
+

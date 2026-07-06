@@ -1,0 +1,11 @@
+=== ATOM PORCUPINE harness — Phase 4 (ledger/audit/config faults) ===
+----------------------------------------------------------------------
+[PASS] P4_config_freeze_rejects_mid_day_edit — Module 16: a mid-day config edit is silently ignored, not applied
+[PASS] P4_config_rollback_refuses_corrupted_lkg — Module 16: rollback refuses a corrupted last-known-good rather than activating it
+[PASS] P4_restart_recovery_mid_position — Module 14: a fresh process after crash reconstructs the open position correctly
+[PASS] P4_reconciliation_flags_missed_fill — Module 14: broker/ledger divergence is flagged, ledger never auto-mutated
+[PASS] P4_eod_finalization_idempotent — Module 14: re-running EOD finalization twice never rewrites the frozen figure
+[PASS] P4_audit_tamper_detected — Module 15: a tampered audit event is caught by the hash chain
+[PASS] P4_malformed_fill_quarantined — Module 14: an off-lot-size fill is quarantined, never silently applied
+----------------------------------------------------------------------
+7/7 scenarios passed

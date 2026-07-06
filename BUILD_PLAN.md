@@ -89,10 +89,13 @@ Check every box, then the Board signs the gate. Unchecked = phase not done.
 - **Gate 3 (Board):** review full paper trade lifecycle + risk invariants. → unlocks Phase 4.
 
 ### Phase 4 — Ledger + Monitor  ☐ GATE 4
-- [ ] Module 14 is single source of truth: applies fills, correct live + realized P&L, restart recovery.
-- [ ] Module 15 audit trail reconstructs any trade end-to-end.
-- [ ] Module 16 serves the day's frozen config/ParameterSet.
-- [ ] Ledger reconciles against execution; no split-brain.
+- [x] Module 14 is single source of truth: applies fills, correct live + realized P&L, restart recovery
+      (recovery via ATOM's existing stateless-per-cron architecture, tested not re-implemented).
+- [x] Module 15 audit trail reconstructs any trade end-to-end (`decision_trace` SQLite table, hash-chained).
+- [x] Module 16 serves the day's frozen config/ParameterSet — fixes a real bug (config was
+      reloading fresh every cron tick, silently changeable mid-day).
+- [x] Ledger reconciles against execution — no live broker yet (paper-only), built generically
+      against any externally-reported position list, tested with synthetic divergence.
 - **Gate 4 (Board):** review P&L accuracy + audit reconstruction. → unlocks Phase 5.
 
 ### Phase 5 — Research Loop  ☐ GATE 5
@@ -133,5 +136,9 @@ already standardized on `ParameterSet`).
 ---
 
 **Update 2026-07-05:** GATE 0, GATE 1, GATE 2 signed (see GATES.md). Phase 3 built — see
-[PHASE-3-TECHNICAL.md](progress/PHASE-3-TECHNICAL.md). **Next:** Board reviews Phase 3 →
-signs GATE 3 → Phase 4 (Ledger + Monitor) begins.
+[PHASE-3-TECHNICAL.md](progress/PHASE-3-TECHNICAL.md).
+
+**Update 2026-07-06:** Phase 4 built — see [PHASE-4-TECHNICAL.md](progress/PHASE-4-TECHNICAL.md).
+Built ahead of GATE 3 sign-off on explicit instruction (validating Phase 3 and Phase 4
+together); GATE 3 and GATE 4 both still need Board review in GATES.md. **Next:** Board
+reviews Phase 3 + Phase 4 → signs GATE 3 → GATE 4 → Phase 5 (Research Loop) begins.

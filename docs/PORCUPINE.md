@@ -39,12 +39,23 @@ that maps a PORCUPINE driver onto ATOM's `Orchestrator` — the seam is `run_sce
   `logs/harness_phase3.log`.
 - `tests/test_harness_phase3.py` — the Phase-3 harness must stay green.
 
+- `src/atom/scenarios_phase4.py` — fault-injection scenarios (added 2026-07-06),
+  `DIRECT_CHECKS` only — no single pipeline path spans Modules 14/15/16 the way Module 5
+  did for Phase 3, so every check exercises its module directly under an injected fault
+  (mid-day config edit, corrupted last-known-good, crash+restart mid-position, broker/
+  ledger reconciliation divergence, double-run EOD finalization, audit tamper detection,
+  malformed/off-lot fill).
+- `run_harness_phase4.py` — runs all Phase-4 direct checks, prints + writes
+  `logs/harness_phase4.log`.
+- `tests/test_harness_phase4.py` — the Phase-4 harness must stay green.
+
 ## Run
 ```bash
 python3 run_harness.py            # Phase-0 skeleton: report to stdout + logs/harness.log
 python3 run_harness_phase1.py     # Phase-1 real pipeline: stdout + logs/harness_phase1.log
 python3 run_harness_phase3.py     # Phase-3 risk-gate + stop-mgmt faults: stdout + logs/harness_phase3.log
-python3 -m pytest                 # includes all three harnesses
+python3 run_harness_phase4.py     # Phase-4 ledger/audit/config faults: stdout + logs/harness_phase4.log
+python3 -m pytest                 # includes all four harnesses
 ```
 
 ## How it grows with the build
@@ -66,6 +77,11 @@ after the price reverted to something sane, silently disabling the stop for the 
 the position's life. Fixed in `stop_management.py` (a credit spread's max profit is
 capped at the credit collected — any reading above that is clamped before it can update
 the ratchet).
+
+**Phase 4 closed (2026-07-06)**: `scenarios_phase4.py` + `run_harness_phase4.py`, 7 direct
+fault-injection checks for Modules 14/15/16. All passed first run — no new bug found this
+time (Phase 4's real bug, the mid-day config-reload issue, was caught by inspection before
+any code was written, not by the harness).
 
 Still open:
 - **Phase 2** — assert ATM/strike/symbol correctness and structure shape.
