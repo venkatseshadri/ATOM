@@ -18,8 +18,9 @@ sys.path.insert(0, "src")
 from datetime import datetime   # noqa: E402
 
 from atom import config, config_freeze, connectivity as conn, lights, phase1  # noqa: E402
-from atom import session_lifecycle as sl  # noqa: E402
+from atom import ledger, session_lifecycle as sl  # noqa: E402
 from atom.atom_state import AtomState      # noqa: E402
+from atom.audit import AuditTrail          # noqa: E402
 from atom.instrument import InstrumentMaster  # noqa: E402
 from atom.penguin import PenguinReader     # noqa: E402
 from atom.runner import run_once           # noqa: E402
@@ -31,12 +32,16 @@ INDEX_CONFIG = {
         "fixture_db": "tests/fixtures/capture_nifty_fixture.sqlite",
         "state": "data/atom_state.sqlite",              # unchanged path — live NIFTY history
         "state_fixture": "data/atom_state_fixture.sqlite",
+        "audit_db": "data/audit_nifty.sqlite",
+        "audit_db_fixture": "data/audit_nifty_fixture.sqlite",
     },
     "SENSEX": {
         "live_db": "/home/trading_ceo/python-trader/varaha/data/capture_sensex.sqlite",
         "fixture_db": "tests/fixtures/capture_sensex_fixture.sqlite",
         "state": "data/atom_state_sensex.sqlite",       # separate FSM/position state
         "state_fixture": "data/atom_state_sensex_fixture.sqlite",
+        "audit_db": "data/audit_sensex.sqlite",
+        "audit_db_fixture": "data/audit_sensex_fixture.sqlite",
     },
 }
 
@@ -93,9 +98,12 @@ def main() -> None:
         state = AtomState(icfg["state"])
         print(f"MODULE 16 CONFIG: frozen {pset.version} for {today} ({pset.approval_state})")
 
-    print(f"=== ATOM Phase 1/2/3 — one cycle ({'fixture' if fixture else 'LIVE'}, {index}) ===")
+    trail = AuditTrail(icfg["audit_db_fixture"] if fixture else icfg["audit_db"])
+
+    print(f"=== ATOM Phase 1/2/3/4 — one cycle ({'fixture' if fixture else 'LIVE'}, {index}) ===")
     r = run_once(reader, state, now=now, max_stale_sec=max_stale, im=im,
-                use_tsl=True, risk_gate=True, capital=cfg.get("risk.deploy.inr", 200000.0))
+                use_tsl=True, risk_gate=True, capital=cfg.get("risk.deploy.inr", 200000.0),
+                audit=trail)
 
     if r["action"] == "EXIT":
         ec, pos = r["exit_check"], r["position"]
@@ -115,6 +123,13 @@ def main() -> None:
             print(f"  TSL was armed: floor=₹{ec.tsl:,.0f}  high-water=₹{ec.high_water_pnl:,.0f}")
         print(f"  => realized P&L = ₹{ec.current_pnl:,.0f}" if ec.current_pnl is not None
               else "  => realized P&L unknown (forced EOD close with no price data)")
+        print(RULE)
+        print("MODULE 15 AUDIT TRAIL (Module 15): reconstructing this trade's full lifecycle...")
+        events = trail.reconstruct_trade(pos["ts"])
+        for e in events:
+            print(f"   [{e.ts}] {e.type} {e.payload}")
+        breaks = trail.verify_integrity()
+        print(f"   integrity check: {'CLEAN' if not breaks else breaks}")
         print(RULE)
         return
 
@@ -192,6 +207,9 @@ def main() -> None:
     print("\n8) SESSION HEALTH  (Module 11 — shared broker session + real margin, read-only)")
     _print_session_health(index)
 
+    print("\n9) LEDGER & P&L  (Module 14 — real vs unrealized split, confidence-tagged)")
+    _print_ledger(ex.get("open_position"), ex.get("exit_check"))
+
     print(f"\n{RULE}")
     rv = r.get("risk_verdict")
     if rv:
@@ -211,6 +229,11 @@ def main() -> None:
     else:
         print(f"RESULT: {r['action']} ({r.get('structure')})  fsm now={r['fsm_state']}  "
               "— no order placed")
+
+    events_this_cycle = trail.reconstruct_trade(now.isoformat()) if order else []
+    if events_this_cycle:
+        print(f"MODULE 15 AUDIT: {len(events_this_cycle)} event(s) logged for this trade "
+             f"(trade_id={now.isoformat()}), integrity={'CLEAN' if not trail.verify_integrity() else 'BROKEN'}")
     print(RULE)
 
 
@@ -253,6 +276,30 @@ def _print_session_health(index: str) -> None:
     else:
         print(f"   broker margin: UNKNOWN ({bm.reason}) — informational gate only, "
              "does not block trading")
+
+
+def _print_ledger(position: dict | None, exit_check) -> None:
+    """Module 14 narration — the confidence-tagged real/unrealized split, not just a
+    raw P&L number. Distinct from section 6's live-monitor line: this is the
+    audited/confidence-flagged view, section 6 is the raw SL/TP monitor."""
+    if not position:
+        print("   flat — no open position, nothing to value")
+        return
+    from atom import ledger as ledger_mod
+    (_, h_k, h_r, h_entry), (_, s_k, s_r, s_entry) = position["legs"]
+    lot = position["lot"]
+    legs = (ledger_mod.Leg(f"{h_k}{h_r}", lot, h_entry),
+           ledger_mod.Leg(f"{s_k}{s_r}", -lot, s_entry))
+    if exit_check and exit_check.hedge_ltp is not None and exit_check.short_ltp is not None:
+        marks = {f"{h_k}{h_r}": exit_check.hedge_ltp, f"{s_k}{s_r}": exit_check.short_ltp}
+    else:
+        marks = {f"{h_k}{h_r}": None, f"{s_k}{s_r}": None}
+    report = ledger_mod.compute_pnl(legs, marks, realized=0.0, lot_size=1)
+    if report.confidence == "LOW_CONFIDENCE":
+        print(f"   unrealized: LOW_CONFIDENCE (stale/missing marks) — realized={report.realized}")
+    else:
+        print(f"   realized=₹{report.realized:,.0f}  unrealized=₹{report.unrealized:,.0f}  "
+             f"total=₹{report.total:,.0f}  confidence={report.confidence}")
 
 
 def _print_risk_verdict(rv) -> None:

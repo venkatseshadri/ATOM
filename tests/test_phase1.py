@@ -360,6 +360,46 @@ def test_run_once_defaults_are_legacy_behavior(tmp_path):
     assert r["risk_verdict"] is None
 
 
+def test_run_once_audit_logs_decision_and_risk_verdict(tmp_path):
+    """Module 15 wiring: a real OPEN under risk_gate=True must produce a
+    reconstructable decision.open + risk.approved pair under the same trade_id."""
+    from atom.audit import AuditTrail
+    phase1.configure({**phase1.config.DEFAULTS, "regime.entry.min_confidence": 0.0})
+    try:
+        reader = PenguinReader(FIX)
+        state = AtomState(str(tmp_path / "s.sqlite"))
+        trail = AuditTrail(str(tmp_path / "audit.sqlite"))
+        now = _now_at_bar(reader)
+        r = run_once(reader, state, now=now, max_stale_sec=1e9, risk_gate=True, audit=trail)
+        assert r["action"] == "OPEN"
+        events = trail.reconstruct_trade(now.isoformat())
+        types = [e.type for e in events]
+        assert "decision.open" in types and "risk.approved" in types
+    finally:
+        phase1.configure(dict(phase1.config.DEFAULTS))
+
+
+def test_run_once_audit_logs_exit_trigger(tmp_path, monkeypatch):
+    """A triggered exit must log a position.*_trigger event keyed by the
+    ORIGINAL position's entry ts, not the exit cycle's own timestamp."""
+    from atom.audit import AuditTrail
+    reader = PenguinReader(FIX)
+    state = AtomState(str(tmp_path / "s.sqlite"))
+    trail = AuditTrail(str(tmp_path / "audit.sqlite"))
+    state.checkpoint_and_record("SINGLE_SPREAD", "2000-01-01T00:00:00",
+                                phase1.PaperOrder("bull_put_spread",
+                                    (("BUY", 23750, "PE", 233.75), ("SELL", 23950, "PE", 305.35)),
+                                    5370.0, 9630.0, 75, "28-JUL-2026"),
+                                "2000-01-01T00:00:00.000000", {"regime": "TREND_UP", "confidence": 0.75})
+    monkeypatch.setattr(phase1, "check_exit",
+                        lambda position, rdr, bar_ts, levels_state=None: phase1.ExitCheck(
+                            True, "TP", 5000.0, 200.0, bar_ts, 100.0, bar_ts, -1000.0, 2000.0, False))
+    r = run_once(reader, state, now=_now_at_bar(reader), max_stale_sec=1e9, audit=trail)
+    assert r["action"] == "EXIT"
+    events = trail.reconstruct_trade("2000-01-01T00:00:00.000000")
+    assert events and events[0].type == "position.tp_trigger"
+
+
 def test_run_once_use_tsl_persists_ratchet_when_not_triggered(tmp_path, monkeypatch):
     """Runner's responsibility under test: when check_exit doesn't trigger and
     use_tsl=True, the returned ratchet state must be written back via
