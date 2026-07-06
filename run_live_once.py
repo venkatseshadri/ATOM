@@ -17,7 +17,7 @@ sys.path.insert(0, "src")
 
 from datetime import datetime   # noqa: E402
 
-from atom import config, connectivity as conn, lights, phase1       # noqa: E402
+from atom import config, config_freeze, connectivity as conn, lights, phase1  # noqa: E402
 from atom import session_lifecycle as sl  # noqa: E402
 from atom.atom_state import AtomState      # noqa: E402
 from atom.instrument import InstrumentMaster  # noqa: E402
@@ -66,13 +66,32 @@ def main() -> None:
         max_stale = 1e9
         cfg = dict(config.DEFAULTS)
     else:
-        # config/atom.conf was never actually wired to the live path before this —
-        # editing it had zero effect. Reload fresh every cycle (new process each cron
-        # tick anyway) so research-loop tuning takes effect within one minute.
-        cfg = config.load_config()
+        # Module 16 (Phase 4, real): config used to reload fresh every single cron
+        # tick — meaning it could silently change mid-day, violating T4.4 ("frozen
+        # config, immutable for the day"). Fixed 2026-07-06: freeze once per calendar
+        # day, idempotent — every later cycle that day gets back the SAME sealed
+        # ParameterSet even if config/atom.conf is edited in between.
+        today = datetime.now().date().isoformat()
+        pstore = config_freeze.ConfigFreezeStore()
+        raw_cfg = config.load_config()
+        pset, violations = pstore.freeze_for_session(today, raw_cfg, datetime.now().isoformat())
+        if pset is None:
+            pset, reason = pstore.rollback(today, datetime.now().isoformat())
+            if pset is None:
+                print(f"MODULE 16 CONFIG FREEZE FAILED: {violations}")
+                print(f"MODULE 16 ROLLBACK ALSO FAILED: {reason}")
+                print("FAIL-SAFE: no usable parameter set — standing down for today, no trade attempted")
+                return
+            print(f"MODULE 16: today's config REJECTED {violations} — "
+                 f"rolled back to last-known-good {pset.version}")
+        else:
+            version_num = int(pset.version.split(":")[0][1:])
+            pstore.mark_last_known_good(version_num)   # validated + operator-authored; see docstring
+        cfg = dict(pset.params)
         phase1.configure(cfg)
         lights.configure(cfg)
         state = AtomState(icfg["state"])
+        print(f"MODULE 16 CONFIG: frozen {pset.version} for {today} ({pset.approval_state})")
 
     print(f"=== ATOM Phase 1/2/3 — one cycle ({'fixture' if fixture else 'LIVE'}, {index}) ===")
     r = run_once(reader, state, now=now, max_stale_sec=max_stale, im=im,
